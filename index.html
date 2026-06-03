@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>CGC Shop Inventory</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@400;600;700&display=swap" rel="stylesheet" />
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #f0ede8; --surface: #faf9f7; --surface2: #e8e4dd;
+    --border: #ccc8c0; --border-strong: #999590;
+    --text: #1a1917; --text-muted: #6b6760; --text-faint: #9c9890;
+    --accent: #c8440f;
+    --green: #3b6d11; --green-bg: #eaf3de;
+    --yellow: #854f0b; --yellow-bg: #faeeda;
+    --red: #a32d2d; --red-bg: #fcebeb;
+    --mono: 'DM Mono', monospace; --sans: 'Syne', sans-serif;
+  }
+  body { font-family: var(--sans); background: var(--bg); color: var(--text); min-height: 100vh; font-size: 15px; }
+  header { background: var(--text); color: #f0ede8; padding: 0 2rem; display: flex; align-items: center; justify-content: space-between; height: 56px; border-bottom: 2px solid var(--accent); }
+  header .logo { font-size: 13px; font-family: var(--mono); font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase; }
+  header .logo span { color: var(--accent); font-size: 16px; }
+  .sync-status { font-family: var(--mono); font-size: 11px; letter-spacing: 0.05em; display: flex; align-items: center; gap: 6px; }
+  .sync-dot { width: 7px; height: 7px; border-radius: 50%; background: #555; transition: background 0.3s; }
+  .sync-dot.ok { background: #3b6d11; }
+  .sync-dot.busy { background: #854f0b; animation: pulse 1s infinite; }
+  .sync-dot.err { background: #a32d2d; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+  .config-banner { background: #fffdf5; border-bottom: 2px solid #fac775; padding: 1.5rem 2rem; display: flex; flex-direction: column; gap: 1rem; }
+  .config-banner h2 { font-size: 14px; font-weight: 600; color: var(--yellow); font-family: var(--mono); letter-spacing: 0.06em; text-transform: uppercase; }
+  .config-steps { font-size: 13px; color: var(--text-muted); line-height: 2; }
+  .config-steps strong { color: var(--text); }
+  .config-input-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .config-banner input { font-family: var(--mono); font-size: 12px; padding: 8px 12px; border: 1px solid #fac775; border-radius: 4px; background: #fff; color: var(--text); flex: 1; min-width: 260px; outline: none; }
+  .config-banner input:focus { border-color: var(--accent); }
+  .btn-connect { font-family: var(--sans); font-size: 13px; font-weight: 600; padding: 8px 20px; border-radius: 5px; border: none; background: var(--accent); color: #fff; cursor: pointer; white-space: nowrap; }
+  .btn-connect:hover { background: #b03a0d; }
+
+  .main { max-width: 1100px; margin: 0 auto; padding: 2rem 1.5rem; }
+  .stats-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 1.75rem; }
+  .stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 1rem 1.25rem; }
+  .stat-card .label { font-family: var(--mono); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-faint); margin-bottom: 6px; }
+  .stat-card .value { font-size: 28px; font-weight: 700; line-height: 1; }
+  .stat-card.danger .value { color: var(--red); }
+  .stat-card.warn .value { color: var(--yellow); }
+  .stat-card.good .value { color: var(--green); }
+
+  .toolbar { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 1rem 1.25rem; margin-bottom: 1.25rem; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .toolbar input[type="text"], .toolbar input[type="number"] { font-family: var(--sans); font-size: 14px; background: var(--bg); border: 1px solid var(--border); border-radius: 5px; padding: 8px 12px; color: var(--text); outline: none; transition: border-color 0.15s; }
+  .toolbar input:focus { border-color: var(--accent); background: var(--surface); }
+  .toolbar input[name="name"] { flex: 2; min-width: 140px; }
+  .toolbar input[name="loc"] { flex: 1.5; min-width: 120px; }
+  .toolbar input[name="qty"], .toolbar input[name="min"] { width: 72px; }
+
+  .btn { font-family: var(--sans); font-size: 13px; font-weight: 600; padding: 8px 16px; border-radius: 5px; border: 1px solid var(--border); background: var(--surface); color: var(--text); cursor: pointer; letter-spacing: 0.02em; transition: background 0.12s, border-color 0.12s; white-space: nowrap; }
+  .btn:hover { background: var(--surface2); border-color: var(--border-strong); }
+  .btn:active { transform: scale(0.98); }
+  .btn-primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .btn-primary:hover { background: #b03a0d; border-color: #b03a0d; }
+  .btn-danger { color: var(--red); }
+  .btn-danger:hover { background: var(--red-bg); border-color: var(--red); }
+  .btn-sm { font-size: 12px; padding: 5px 10px; }
+
+  .filter-row { display: flex; gap: 8px; margin-bottom: 1rem; align-items: center; flex-wrap: wrap; }
+  .filter-btn { font-family: var(--mono); font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; padding: 6px 14px; border-radius: 4px; border: 1px solid var(--border); background: var(--surface); color: var(--text-muted); cursor: pointer; transition: all 0.12s; }
+  .filter-btn:hover { border-color: var(--border-strong); color: var(--text); }
+  .filter-btn.active { background: var(--text); color: #f0ede8; border-color: var(--text); }
+  .filter-btn.active-red { background: var(--red-bg); color: var(--red); border-color: var(--red); }
+  .search-wrap { margin-left: auto; }
+  .search-wrap input { font-family: var(--sans); font-size: 13px; padding: 6px 12px; border: 1px solid var(--border); border-radius: 5px; background: var(--surface); color: var(--text); width: 200px; outline: none; }
+  .search-wrap input:focus { border-color: var(--accent); }
+
+  .table-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  thead th { background: var(--text); color: #c8c4bc; font-family: var(--mono); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; font-weight: 500; padding: 10px 14px; text-align: left; border-bottom: 2px solid var(--accent); cursor: pointer; user-select: none; white-space: nowrap; }
+  thead th:hover { color: #fff; }
+  thead th.center { text-align: center; }
+  tbody tr { border-bottom: 1px solid var(--border); transition: background 0.1s; }
+  tbody tr:last-child { border-bottom: none; }
+  tbody tr:hover { background: var(--bg); }
+  tbody tr.editing { background: #fffdf5; }
+  td { padding: 11px 14px; vertical-align: middle; }
+  td.center { text-align: center; }
+  td .item-name { font-weight: 600; font-size: 14px; }
+  td .loc { font-family: var(--mono); font-size: 12px; color: var(--text-muted); }
+  .qty-ctrl { display: flex; align-items: center; justify-content: center; gap: 8px; }
+  .qty-btn { width: 28px; height: 28px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); font-size: 18px; line-height: 1; cursor: pointer; display: flex; align-items: center; justify-content: center; font-family: var(--mono); color: var(--text); transition: all 0.1s; }
+  .qty-btn:hover { background: var(--surface2); border-color: var(--border-strong); }
+  .qty-val { font-family: var(--mono); font-size: 15px; font-weight: 500; min-width: 28px; text-align: center; }
+  .badge { display: inline-block; font-family: var(--mono); font-size: 10px; font-weight: 500; letter-spacing: 0.07em; text-transform: uppercase; padding: 3px 10px; border-radius: 3px; }
+  .badge-ok { background: var(--green-bg); color: var(--green); }
+  .badge-low { background: var(--yellow-bg); color: var(--yellow); }
+  .badge-order { background: var(--red-bg); color: var(--red); }
+  .badge-out { background: var(--red); color: #fff; }
+  .updated { font-family: var(--mono); font-size: 11px; color: var(--text-faint); }
+  .action-btns { display: flex; gap: 6px; justify-content: center; }
+  .icon-btn { width: 28px; height: 28px; border-radius: 4px; border: 1px solid transparent; background: transparent; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 14px; transition: all 0.1s; }
+  .icon-btn:hover { background: var(--surface2); border-color: var(--border); }
+  .icon-btn.del:hover { background: var(--red-bg); border-color: var(--red); color: var(--red); }
+  .edit-input { font-family: var(--sans); font-size: 13px; padding: 5px 8px; border: 1px solid var(--accent); border-radius: 4px; width: 100%; background: #fff; color: var(--text); outline: none; }
+  .empty-state { text-align: center; padding: 3rem; color: var(--text-faint); font-family: var(--mono); font-size: 13px; letter-spacing: 0.05em; }
+  .bottom-bar { display: flex; justify-content: space-between; align-items: center; margin-top: 1rem; flex-wrap: wrap; gap: 8px; }
+  .bottom-bar-left { display: flex; gap: 8px; }
+  .toast { position: fixed; bottom: 1.5rem; right: 1.5rem; background: var(--text); color: #f0ede8; font-family: var(--mono); font-size: 12px; letter-spacing: 0.04em; padding: 10px 18px; border-radius: 6px; opacity: 0; pointer-events: none; transition: opacity 0.2s; z-index: 100; }
+  .toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo"><span>CGC</span>&nbsp; Shop Inventory</div>
+  <div class="sync-status">
+    <div class="sync-dot" id="sync-dot"></div>
+    <span id="sync-label" style="color:#9c9890;">Not connected</span>
+  </div>
+</header>
+
+<div class="config-banner" id="config-banner">
+  <h2>Connect to Google Sheets</h2>
+  <div class="config-steps">
+    <strong>Step 1:</strong> Open your Google Sheet → Extensions → Apps Script → paste the contents of Code.gs → click Save (💾) → click Deploy → New deployment → Web app → Execute as: Me → Who has access: Anyone → Deploy → copy the URL<br>
+    <strong>Step 2:</strong> Paste that URL below and click Connect.
+  </div>
+  <div class="config-input-row">
+    <input type="text" id="cfg-url" placeholder="Paste your Apps Script Web App URL here" />
+    <button class="btn-connect" onclick="saveConfig()">Connect →</button>
+  </div>
+</div>
+
+<div class="main">
+  <div class="stats-row">
+    <div class="stat-card"><div class="label">Total items</div><div class="value" id="stat-total">—</div></div>
+    <div class="stat-card danger"><div class="label">Order now</div><div class="value" id="stat-order">—</div></div>
+    <div class="stat-card warn"><div class="label">Running low</div><div class="value" id="stat-low">—</div></div>
+    <div class="stat-card good"><div class="label">Stocked OK</div><div class="value" id="stat-ok">—</div></div>
+  </div>
+
+  <div class="toolbar">
+    <input type="text" name="name" placeholder="Item name" id="in-name" />
+    <input type="text" name="loc" placeholder="Location (e.g. Shelf A1)" id="in-loc" />
+    <input type="number" name="qty" placeholder="Qty" id="in-qty" min="0" />
+    <input type="number" name="min" placeholder="Min" id="in-min" min="0" />
+    <button class="btn btn-primary" onclick="addItem()">+ Add item</button>
+  </div>
+
+  <div class="filter-row">
+    <button class="filter-btn active" id="f-all" onclick="setFilter('all')">All</button>
+    <button class="filter-btn" id="f-order" onclick="setFilter('order')">Needs order</button>
+    <button class="filter-btn" id="f-low" onclick="setFilter('low')">Running low</button>
+    <button class="filter-btn" id="f-ok" onclick="setFilter('ok')">OK</button>
+    <div class="search-wrap"><input type="text" id="search" placeholder="Search items or locations…" oninput="render()" /></div>
+    <button class="btn btn-sm" onclick="exportCSV()">↓ Export CSV</button>
+    <button class="btn btn-sm" onclick="loadData()">↺ Refresh</button>
+  </div>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th onclick="sortBy('name')">Item <span id="s-name"></span></th>
+          <th onclick="sortBy('loc')">Location <span id="s-loc"></span></th>
+          <th class="center">Qty on hand</th>
+          <th class="center" onclick="sortBy('min')">Min <span id="s-min"></span></th>
+          <th class="center">Status</th>
+          <th class="center" onclick="sortBy('updated')">Updated <span id="s-updated"></span></th>
+          <th class="center">Actions</th>
+        </tr>
+      </thead>
+      <tbody id="tbody"></tbody>
+    </table>
+    <div class="empty-state" id="empty" style="display:none;">No items match.</div>
+  </div>
+
+  <div class="bottom-bar">
+    <div class="bottom-bar-left">
+      <button class="btn btn-sm" onclick="markChecked()">✓ Mark all checked today</button>
+      <button class="btn btn-sm btn-danger" onclick="clearConfig()">✕ Disconnect</button>
+    </div>
+    <div style="font-family:var(--mono);font-size:11px;color:var(--text-faint);">Live sync via Google Sheets · Export CSV as backup</div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const CFG_KEY = 'cgc_gas_cfg';
+let items = [], filterMode = 'all', sortCol = null, sortDir = 1, editId = null;
+let SCRIPT_URL = '';
+let saveTimer = null;
+
+function loadConfig() {
+  try {
+    const c = JSON.parse(localStorage.getItem(CFG_KEY));
+    if (c && c.url) { SCRIPT_URL = c.url; return true; }
+  } catch(e) {}
+  return false;
+}
+
+function saveConfig() {
+  const url = document.getElementById('cfg-url').value.trim();
+  if (!url || !url.startsWith('https://script.google.com')) { toast('Paste a valid Apps Script Web App URL.'); return; }
+  SCRIPT_URL = url;
+  localStorage.setItem(CFG_KEY, JSON.stringify({ url }));
+  document.getElementById('config-banner').style.display = 'none';
+  loadData();
+}
+
+function clearConfig() {
+  if (!confirm('Disconnect from Google Sheets?')) return;
+  localStorage.removeItem(CFG_KEY);
+  SCRIPT_URL = '';
+  document.getElementById('config-banner').style.display = 'flex';
+  items = []; render(); setSyncStatus('idle');
+}
+
+function setSyncStatus(state, msg) {
+  const dot = document.getElementById('sync-dot');
+  const label = document.getElementById('sync-label');
+  dot.className = 'sync-dot';
+  if (state === 'ok') { dot.classList.add('ok'); label.textContent = msg || 'Synced'; label.style.color = '#3b6d11'; }
+  else if (state === 'busy') { dot.classList.add('busy'); label.textContent = msg || 'Syncing…'; label.style.color = '#854f0b'; }
+  else if (state === 'err') { dot.classList.add('err'); label.textContent = msg || 'Error'; label.style.color = '#a32d2d'; }
+  else { label.textContent = 'Not connected'; label.style.color = '#9c9890'; }
+}
+
+async function api(method, body) {
+  const opts = { method, headers: { 'Content-Type': 'text/plain' } };
+  if (body) opts.body = JSON.stringify(body);
+  const url = method === 'GET' ? SCRIPT_URL + '?action=read' : SCRIPT_URL;
+  const res = await fetch(url, opts);
+  return res.json();
+}
+
+async function loadData() {
+  if (!SCRIPT_URL) return;
+  setSyncStatus('busy', 'Loading…');
+  try {
+    const data = await api('GET');
+    if (!data.ok) throw new Error('bad response');
+    items = data.rows.map((r, i) => ({ ...r, id: i + 1 }));
+    render();
+    setSyncStatus('ok', 'Synced ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+  } catch(e) {
+    setSyncStatus('err', 'Load failed — check your Web App URL');
+    toast('Could not load data. Make sure you deployed the script correctly.');
+  }
+}
+
+async function saveAll() {
+  if (!SCRIPT_URL) return;
+  setSyncStatus('busy', 'Saving…');
+  try {
+    const rows = items.map(i => ({ name: i.name, loc: i.loc, qty: i.qty, min: i.min, updated: i.updated, status: statusLabel(i.qty, i.min) }));
+    const data = await api('POST', { action: 'write', rows });
+    if (!data.ok) throw new Error();
+    setSyncStatus('ok', 'Saved ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+    await loadData();
+  } catch(e) {
+    setSyncStatus('err', 'Save failed');
+    toast('Could not save. Try again.');
+  }
+}
+
+async function appendItem(item) {
+  if (!SCRIPT_URL) return;
+  setSyncStatus('busy', 'Adding…');
+  try {
+    const row = { name: item.name, loc: item.loc, qty: item.qty, min: item.min, updated: item.updated, status: statusLabel(item.qty, item.min) };
+    const data = await api('POST', { action: 'append', row });
+    if (!data.ok) throw new Error();
+    setSyncStatus('ok', 'Saved');
+    await loadData();
+  } catch(e) {
+    setSyncStatus('err', 'Add failed');
+    toast('Could not add item.');
+  }
+}
+
+async function removeItem(item) {
+  if (!SCRIPT_URL) return;
+  setSyncStatus('busy', 'Deleting…');
+  try {
+    const data = await api('POST', { action: 'delete', rowIndex: item.rowIndex });
+    if (!data.ok) throw new Error();
+    setSyncStatus('ok', 'Deleted');
+    await loadData();
+  } catch(e) {
+    setSyncStatus('err', 'Delete failed');
+    toast('Could not delete item.');
+  }
+}
+
+function today() { return new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }); }
+
+function statusKey(q, m) {
+  if (q === 0) return 'out';
+  if (q < m) return 'order';
+  if (q < m * 1.5) return 'low';
+  return 'ok';
+}
+
+function statusLabel(q, m) { return { ok: 'OK', low: 'Running low', order: 'Order now', out: 'Out of stock' }[statusKey(q, m)]; }
+
+function badge(q, m) {
+  const s = statusKey(q, m);
+  const map = { out: ['badge-out', 'Out of stock'], order: ['badge-order', 'Order now'], low: ['badge-low', 'Running low'], ok: ['badge-ok', 'OK'] };
+  const [cls, label] = map[s];
+  return `<span class="badge ${cls}">${label}</span>`;
+}
+
+function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+function toast(msg, duration = 4000) {
+  const el = document.getElementById('toast');
+  el.textContent = msg; el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), duration);
+}
+
+function getList() {
+  const q = document.getElementById('search').value.toLowerCase();
+  let list = [...items];
+  if (filterMode === 'order') list = list.filter(i => ['order','out'].includes(statusKey(i.qty, i.min)));
+  if (filterMode === 'low') list = list.filter(i => statusKey(i.qty, i.min) === 'low');
+  if (filterMode === 'ok') list = list.filter(i => statusKey(i.qty, i.min) === 'ok');
+  if (q) list = list.filter(i => i.name.toLowerCase().includes(q) || i.loc.toLowerCase().includes(q));
+  if (sortCol) list.sort((a, b) => {
+    let av = a[sortCol], bv = b[sortCol];
+    if (typeof av === 'string') { av = av.toLowerCase(); bv = bv.toLowerCase(); }
+    return av < bv ? -sortDir : av > bv ? sortDir : 0;
+  });
+  return list;
+}
+
+function render() {
+  const list = getList();
+  document.getElementById('tbody').innerHTML = list.map(item => {
+    if (editId === item.id) {
+      return `<tr class="editing">
+        <td><input class="edit-input" id="e-name" value="${esc(item.name)}" style="min-width:140px"/></td>
+        <td><input class="edit-input" id="e-loc" value="${esc(item.loc)}" style="min-width:110px"/></td>
+        <td class="center"><input class="edit-input" id="e-qty" type="number" value="${item.qty}" style="width:60px;text-align:center"/></td>
+        <td class="center"><input class="edit-input" id="e-min" type="number" value="${item.min}" style="width:60px;text-align:center"/></td>
+        <td class="center">${badge(item.qty, item.min)}</td>
+        <td class="center updated">${item.updated || '—'}</td>
+        <td class="center"><div class="action-btns">
+          <button class="icon-btn" onclick="saveEdit(${item.id})">✓</button>
+          <button class="icon-btn" onclick="cancelEdit()">✕</button>
+        </div></td>
+      </tr>`;
+    }
+    return `<tr>
+      <td><div class="item-name">${esc(item.name)}</div></td>
+      <td><div class="loc">${esc(item.loc)}</div></td>
+      <td class="center"><div class="qty-ctrl">
+        <button class="qty-btn" onclick="adj(${item.id},-1)">−</button>
+        <span class="qty-val">${item.qty}</span>
+        <button class="qty-btn" onclick="adj(${item.id},1)">+</button>
+      </div></td>
+      <td class="center" style="font-family:var(--mono);font-size:13px;">${item.min}</td>
+      <td class="center">${badge(item.qty, item.min)}</td>
+      <td class="center"><span class="updated">${item.updated || '—'}</span></td>
+      <td class="center"><div class="action-btns">
+        <button class="icon-btn" onclick="startEdit(${item.id})">✎</button>
+        <button class="icon-btn del" onclick="del(${item.id})">✕</button>
+      </div></td>
+    </tr>`;
+  }).join('');
+
+  document.getElementById('empty').style.display = (list.length === 0 && items.length > 0) ? 'block' : 'none';
+  const order = items.filter(i => ['order','out'].includes(statusKey(i.qty, i.min))).length;
+  const low = items.filter(i => statusKey(i.qty, i.min) === 'low').length;
+  const ok = items.filter(i => statusKey(i.qty, i.min) === 'ok').length;
+  document.getElementById('stat-total').textContent = items.length || '—';
+  document.getElementById('stat-order').textContent = items.length ? order : '—';
+  document.getElementById('stat-low').textContent = items.length ? low : '—';
+  document.getElementById('stat-ok').textContent = items.length ? ok : '—';
+  ['name','loc','min','updated'].forEach(c => {
+    const el = document.getElementById('s-' + c);
+    if (el) el.textContent = sortCol === c ? (sortDir === 1 ? ' ↑' : ' ↓') : '';
+  });
+  ['all','order','low','ok'].forEach(f => {
+    const btn = document.getElementById('f-' + f);
+    if (!btn) return;
+    btn.classList.remove('active','active-red');
+    if (filterMode === f) btn.classList.add(f === 'order' ? 'active-red' : 'active');
+  });
+}
+
+function adj(id, d) {
+  const item = items.find(i => i.id === id);
+  if (!item) return;
+  item.qty = Math.max(0, item.qty + d);
+  item.updated = today();
+  render();
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => saveAll(), 1200);
+}
+
+function del(id) {
+  const item = items.find(i => i.id === id);
+  if (!item || !confirm('Delete this item?')) return;
+  removeItem(item);
+}
+
+function addItem() {
+  const name = document.getElementById('in-name').value.trim();
+  const loc = document.getElementById('in-loc').value.trim();
+  const qty = Math.max(0, parseInt(document.getElementById('in-qty').value) || 0);
+  const min = Math.max(1, parseInt(document.getElementById('in-min').value) || 1);
+  if (!name) { document.getElementById('in-name').focus(); return; }
+  ['in-name','in-loc','in-qty','in-min'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('in-name').focus();
+  appendItem({ name, loc, qty, min, updated: today() });
+}
+
+function startEdit(id) { editId = id; render(); setTimeout(() => document.getElementById('e-name')?.focus(), 30); }
+function cancelEdit() { editId = null; render(); }
+
+function saveEdit(id) {
+  const item = items.find(i => i.id === id);
+  if (item) {
+    const n = document.getElementById('e-name').value.trim();
+    const l = document.getElementById('e-loc').value.trim();
+    if (n) item.name = n;
+    if (l) item.loc = l;
+    item.qty = Math.max(0, parseInt(document.getElementById('e-qty').value) || 0);
+    item.min = Math.max(1, parseInt(document.getElementById('e-min').value) || 1);
+    item.updated = today();
+  }
+  editId = null; render();
+  saveAll();
+}
+
+function setFilter(f) { filterMode = f; render(); }
+function sortBy(col) { if (sortCol === col) sortDir *= -1; else { sortCol = col; sortDir = 1; } render(); }
+function markChecked() { items.forEach(i => i.updated = today()); render(); saveAll(); }
+
+function exportCSV() {
+  const rows = [['Item','Location','Qty On Hand','Min Qty','Status','Last Updated']];
+  items.forEach(i => rows.push([`"${i.name}"`,`"${i.loc}"`,i.qty,i.min,statusLabel(i.qty,i.min),i.updated||'']));
+  const csv = rows.map(r => r.join(',')).join('\n');
+  const a = document.createElement('a');
+  a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
+  a.download = 'cgc_inventory_' + new Date().toISOString().slice(0, 10) + '.csv';
+  a.click();
+}
+
+document.addEventListener('keydown', e => { if (e.key === 'Enter' && document.activeElement.closest('.toolbar')) addItem(); });
+
+if (loadConfig()) {
+  document.getElementById('config-banner').style.display = 'none';
+  loadData();
+} else {
+  render();
+}
+</script>
+</body>
+</html>
