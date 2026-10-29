@@ -1,0 +1,713 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CGC Daily Work Orders</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..100,500..800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+
+/* Layout: one planning card per crew, stops stacked inside; each crew prints as its own work order */
+:root{
+  --bg:#eef1f2; --panel:#ffffff; --fg:#14201f; --muted:#5b6a69; --line:#cfd8d8;
+  --accent:#0d6b70; --accent-soft:#d9eeee; --warn:#a4400f; --field:#f6f9f9; --stop:#f3f7f7;
+  --s0:#0d6b70; --s0-soft:#e3f1f1; --s1:#a8590a; --s1-soft:#fbf0e2; --s2:#6a3fa0; --s2-soft:#f1ebf8; --s3:#2f7a3a; --s3-soft:#e6f3e8;
+  --display:"Archivo",system-ui,sans-serif; --body:"IBM Plex Sans",system-ui,sans-serif; --mono:"IBM Plex Mono",ui-monospace,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#111818; --panel:#192322; --fg:#e4ecea; --muted:#94a6a4; --line:#2f3d3c;
+  --accent:#5fc3c3; --accent-soft:#1d3a3a; --warn:#f0925c; --field:#141d1c; --stop:#1d2928; --s0:#5fc3c3; --s0-soft:#1a3433; --s1:#e9a35a; --s1-soft:#3a2a17; --s2:#b993e8; --s2-soft:#2c2340; --s3:#7fcf8a; --s3-soft:#1c3320; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#111818; --panel:#192322; --fg:#e4ecea; --muted:#94a6a4; --line:#2f3d3c;
+  --accent:#5fc3c3; --accent-soft:#1d3a3a; --warn:#f0925c; --field:#141d1c; --stop:#1d2928; --s0:#5fc3c3; --s0-soft:#1a3433; --s1:#e9a35a; --s1-soft:#3a2a17; --s2:#b993e8; --s2-soft:#2c2340; --s3:#7fcf8a; --s3-soft:#1c3320; color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0}
+[hidden]{display:none!important}
+body{background:var(--bg);color:var(--fg);font-family:var(--body);font-size:15px;line-height:1.45}
+.wrap{max-width:1040px;margin:0 auto;padding-block:20px 60px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:grid;gap:18px}
+header.top{display:flex;flex-wrap:wrap;gap:12px 20px;align-items:end;justify-content:space-between}
+h1{font-family:var(--display);font-stretch:80%;font-weight:800;font-size:2rem;letter-spacing:.01em;margin:0;text-transform:uppercase;text-wrap:balance}
+.eyebrow{font-family:var(--mono);font-size:.75rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+label{display:grid;gap:4px;font-size:.78rem;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;min-width:0}
+input,textarea,select{font:inherit;font-size:.95rem;color:var(--fg);background:var(--field);border:1px solid var(--line);border-radius:6px;padding:8px 10px;width:100%;text-transform:none;letter-spacing:0;font-weight:400}
+textarea{resize:vertical;min-height:60px}
+input:focus,textarea:focus,select:focus,button:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+button{font:inherit;font-weight:600;font-size:.88rem;border-radius:6px;padding:8px 14px;cursor:pointer;border:1px solid var(--line);background:var(--panel);color:var(--fg)}
+button.primary{background:var(--accent);border-color:var(--accent);color:var(--panel)}
+button.small{padding:5px 10px;font-size:.8rem}
+button.danger{color:var(--warn)}
+button.armed{background:var(--warn);color:var(--panel);border-color:var(--warn)}
+button.x{padding:6px 10px;color:var(--muted)}
+.tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);overflow-x:auto}
+.tabs button{border:none;border-bottom:3px solid transparent;border-radius:0;background:none;color:var(--muted);padding:10px 14px;white-space:nowrap}
+.tabs button[aria-selected="true"]{color:var(--fg);border-bottom-color:var(--accent)}
+.tip{background:var(--accent-soft);border-radius:8px;padding:10px 14px;font-size:.88rem}
+.tip-x{display:flex;gap:10px;align-items:flex-start;justify-content:space-between}
+.tip-x .x{background:transparent;border:none;padding:0 4px;font-size:1rem;line-height:1.3;color:var(--muted)}
+.tip-x .x:hover{color:var(--fg)}
+.tip-show{display:flex;justify-content:flex-end;margin-bottom:-8px}
+.linkish{background:none;border:none;color:var(--accent);padding:0;font-weight:500;font-size:.82rem;text-decoration:underline;cursor:pointer}
+.tip b{font-family:var(--mono);font-weight:500}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px;display:grid;gap:14px}
+.card-head{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between}
+.card-head h2{margin:0;font-family:var(--display);font-stretch:85%;font-weight:700;font-size:1.25rem;text-transform:uppercase}
+.grid{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(190px,1fr))}
+.grid.two{grid-template-columns:repeat(auto-fit,minmax(280px,1fr))}
+.hint{font-size:.78rem;color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0}
+.stop{--sc:var(--s0);--sc-soft:var(--s0-soft);background:var(--sc-soft);border:1px solid var(--line);border-left:8px solid var(--sc);border-radius:8px;padding:14px;display:grid;gap:12px}
+.stop-head{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between}
+.stop-head h3{margin:0;font-family:var(--display);font-stretch:85%;font-weight:700;font-size:1.05rem;text-transform:uppercase;color:var(--sc)}
+.stop.c1{--sc:var(--s1);--sc-soft:var(--s1-soft)}
+.stop.c2{--sc:var(--s2);--sc-soft:var(--s2-soft)}
+.stop.c3{--sc:var(--s3);--sc-soft:var(--s3-soft)}
+.stop .stop-num{display:inline-grid;place-items:center;width:1.6em;height:1.6em;border-radius:50%;background:var(--sc);color:var(--panel);margin-right:8px;font-size:.95em;vertical-align:1px}
+.task-list{display:grid;gap:6px}
+.task-row{display:grid;grid-template-columns:minmax(0,1fr) 130px 170px auto;gap:6px;align-items:center}
+table.hist{width:100%;border-collapse:collapse;font-size:.9rem;min-width:560px}
+table.hist th,table.hist td{text-align:left;padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+table.hist th{font-family:var(--mono);font-size:.72rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:500}
+table.hist td.d{white-space:nowrap;font-family:var(--mono);font-size:.82rem}
+.bid{font-family:var(--mono);font-size:.8rem;color:var(--accent)}
+@media (max-width:620px){.task-row{grid-template-columns:minmax(0,1fr) auto}.task-row select,.task-row .goal{grid-column:1/2}}
+.who-sum{display:flex;flex-wrap:wrap;gap:6px}
+.chip{font-family:var(--mono);font-size:.74rem;padding:3px 9px;border-radius:99px;background:var(--accent-soft);color:var(--accent)}
+.chip.off{background:transparent;border:1px dashed var(--warn);color:var(--warn)}
+.library{display:grid;gap:8px}
+.lib-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--line)}
+.lib-row span{min-width:0}
+
+/* ---------- Work order sheet (preview + print): plain, low ink ---------- */
+.sheets{display:grid;gap:24px;justify-items:center}
+.sheet{background:#fff;color:#111;width:100%;max-width:8.5in;padding:.5in .6in;border:1px solid var(--line);font-family:var(--body);font-size:11pt;line-height:1.4;display:grid;gap:18px;align-content:start;overflow-wrap:anywhere}
+.sh-top{display:flex;justify-content:space-between;align-items:flex-end;gap:12px;border-bottom:1px solid #111;padding-bottom:8px}
+.sh-co{font-weight:600;font-size:12pt}
+.sh-sub{font-size:9pt;color:#555}
+.sh-date{text-align:right;font-size:10pt}
+.sh-date strong{display:block;font-size:12pt}
+.sh-crew{display:flex;flex-wrap:wrap;gap:4px 28px;font-size:10.5pt}
+.sh-k{font-size:8pt;text-transform:uppercase;letter-spacing:.06em;color:#666;margin-right:6px}
+.sh-stop{display:grid;gap:6px;break-inside:avoid;page-break-inside:avoid}
+.sh-h{display:flex;justify-content:space-between;gap:10px;font-weight:700;font-size:12pt;border-bottom:1px solid #111;padding-bottom:3px}
+.sh-h span:last-child{font-weight:400;font-size:10.5pt}
+.sh-meta{display:flex;flex-wrap:wrap;gap:2px 24px;font-size:10pt;color:#333}
+table.tasks{width:100%;border-collapse:collapse}
+table.tasks td{padding:5px 6px;border-bottom:1px solid #ccc;vertical-align:top;text-align:left}
+td.c{width:22px;padding-left:0!important}
+td.who-cell{width:24%;font-weight:600}
+td.goal{width:16%;text-align:right!important;color:#333}
+.box{display:inline-block;width:11px;height:11px;border:1px solid #111;vertical-align:-1px}
+.sh-extra{font-size:10pt;display:grid;gap:2px}
+.sh-text{white-space:pre-wrap}
+
+@media print{
+  @page{size:letter;margin:0}
+  body{background:#fff}
+  .wrap > :not(#preview){display:none!important}
+  #preview{display:block!important}
+  #preview > .tip{display:none!important}
+  .wrap{padding:0;max-width:none}
+  .sheets{gap:0}
+  .sheet{border:none;max-width:none;break-after:page;page-break-after:always}
+  .sheet:last-child{break-after:auto;page-break-after:auto}
+}
+
+/* ---------- Live version additions ---------- */
+:root{ --ok:#2f7a3a; --ok-soft:#e3f2e5; }
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){ --ok:#7fcf8a; --ok-soft:#1c3320; }}
+:root[data-theme="dark"]{ --ok:#7fcf8a; --ok-soft:#1c3320; }
+.task-row{grid-template-columns:minmax(0,1fr) 120px 160px auto 104px auto}
+@media (max-width:760px){.task-row{grid-template-columns:minmax(0,1fr) auto}.task-row select,.task-row .goal,.task-row .photo-opt,.task-row .st{grid-column:1/2}}
+.photo-opt{display:flex;align-items:center;gap:5px;font-size:.78rem;font-weight:500;color:var(--muted);text-transform:none;letter-spacing:0;white-space:nowrap}
+.photo-opt input{width:auto;margin:0}
+.st{font-family:var(--mono);font-size:.74rem;white-space:nowrap;display:flex;flex-direction:column;align-items:flex-start;gap:2px}
+.st .done{display:inline-block;padding:3px 8px;border-radius:99px;background:var(--ok-soft);color:var(--ok);font-weight:500}
+.st .by{color:var(--muted)}
+.st .carry{display:inline-block;padding:2px 8px;border-radius:99px;border:1px solid var(--warn);color:var(--warn);font-weight:500}
+.st a{color:var(--ok)}
+.crew-note{background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--ok);border-radius:6px;padding:8px 10px;font-size:.9rem}
+.crew-note b{font-size:.74rem;text-transform:uppercase;letter-spacing:.05em;color:var(--ok)}
+.linkrow{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.linkrow input{flex:1 1 260px;font-family:var(--mono);font-size:.78rem;color:var(--muted)}
+.progress{font-family:var(--mono);font-size:.78rem;padding:3px 10px;border-radius:99px;background:var(--ok-soft);color:var(--ok)}
+.savepill{font-family:var(--mono);font-size:.74rem;color:var(--muted);min-height:1em}
+.savepill.err{color:var(--warn);font-weight:500}
+.top-right{display:grid;gap:4px;justify-items:end}
+#loading{position:fixed;inset:0;display:grid;place-items:center;background:var(--bg);z-index:20;font-size:1rem;color:var(--muted)}
+#loading.err{color:var(--warn);padding:24px;text-align:center}
+</style>
+</head><body>
+<div id="loading">Loading your work orders…</div>
+<div class="wrap">
+  <header class="top">
+    <div>
+      <div class="eyebrow">Commercial Glass Company</div>
+      <h1>Daily Work Orders</h1>
+    </div>
+    <div class="top-right">
+      <label for="planDate">Work date<input type="date" id="planDate"></label>
+      <span class="savepill" id="saveState" aria-live="polite"></span>
+    </div>
+  </header>
+
+  <div class="tabs" role="tablist">
+    <button role="tab" id="tab-plan" aria-selected="true">Plan the day</button>
+    <button role="tab" id="tab-preview" aria-selected="false">Preview sheets</button>
+    <button role="tab" id="tab-history" aria-selected="false">Look back by job</button>
+    <button role="tab" id="tab-lists" aria-selected="false">Saved jobs &amp; crew</button>
+  </div>
+
+  <section id="plan" style="display:grid;gap:16px">
+    <div class="tip tip-x" id="planTip"><span>One card per crew. Add a stop for each jobsite they hit today, in driving order. Give every task a person and a goal like "by lunch" or "6 openings." Anything not finished rolls to the top of that crew's next planned day on its own, with a red day count. Click its X if it's no longer needed. Each crew lead has one permanent link: click "Copy crew link" and send it to him once, by text, email or Phone Link. It always opens that day's plan. Checkmarks show up here as the crew taps tasks done. Everything saves to the CGC Work Orders Google Sheet.</span><button class="x" id="hideTip" aria-label="Hide tips" title="Hide tips">✕</button></div>
+    <div class="tip-show" id="showTipRow" hidden><button class="linkish" id="showTip">Show tips</button></div>
+    <div id="cards" style="display:grid;gap:16px"></div>
+    <div class="bar">
+      <button class="primary" id="addSheet">+ Add crew</button>
+      <button id="newDay">Start a new day</button>
+      <span class="hint" id="newDayHint" hidden>Moves to the next workday and starts fresh stops for each crew. Today's plan stays saved. Click again to confirm.</span>
+    </div>
+  </section>
+
+  <section id="preview" hidden>
+    <div class="tip bar" style="margin-bottom:16px;justify-content:space-between"><span>Each crew prints on its own page. If the button does nothing, press Ctrl + P.</span><button class="primary" id="printBtn">Print all sheets</button></div>
+    <div class="sheets" id="sheets"></div>
+  </section>
+
+  <section id="history" hidden style="display:grid;gap:16px">
+    <div class="tip">Pick a job to see every task assigned on it, day by day, and when it got marked done. If the same work shows up three days in a row, that's the conversation to have.</div>
+    <div class="card">
+      <label for="histJob">Job<select id="histJob"></select></label>
+      <div id="histOut" style="overflow-x:auto"></div>
+    </div>
+  </section>
+
+  <section id="lists" hidden style="display:grid;gap:16px">
+    <div class="card">
+      <div class="card-head"><h2>Pull from Job Tracker</h2></div>
+      <p class="hint" style="margin:0;font-size:.88rem">Copies active jobs from the Projects tab of the CGC Job Tracker into your saved jobs. Paid and cancelled jobs are skipped. Jobs you added by hand stay put.</p>
+      <div class="bar">
+        <button class="primary" id="pullBtn">Pull jobs now</button>
+        <label for="inclDone" style="display:flex;align-items:center;gap:6px;text-transform:none;letter-spacing:0;font-weight:400;font-size:.9rem;color:var(--fg)"><input type="checkbox" id="inclDone" style="width:auto"> Include completed jobs</label>
+      </div>
+      <div id="syncMsg" class="hint" style="font-size:.88rem"></div>
+    </div>
+    <div class="card">
+      <div class="card-head"><h2>Saved jobs</h2><span class="hint">Click "Save job to list" on any stop to add one.</span></div>
+      <div class="library" id="jobList"></div>
+    </div>
+    <div class="card">
+      <div class="card-head"><h2>Crew roster</h2></div>
+      <label for="roster">One name per line <span class="hint">These show up as suggestions when you type crew names.</span>
+        <textarea id="roster" rows="6"></textarea></label>
+    </div>
+  </section>
+</div>
+
+<datalist id="peopleList"></datalist>
+
+<script>
+const Q = new URLSearchParams(location.search);
+const BOOT = { c: Q.get("crew") || "", k: Q.get("k") || "", url: location.href.split("?")[0].split("#")[0].replace(/[^\/]*$/, "crew.html") };
+const ALL = "Whole crew";
+const uid = () => Math.random().toString(36).slice(2,9);
+const token = () => { const a="ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789"; let s=""; for(let i=0;i<14;i++) s+=a[Math.floor(Math.random()*a.length)]; return s; };
+const task = (text="",who=ALL,goal="") => ({id:uid(),text,who,goal,photoReq:false});
+const blankStop = () => ({id:uid(),arrive:"",job:"",address:"",gc:"",gcPhone:"",tasks:[task(),task()],materials:"",notes:""});
+const blankCrew = () => ({id:uid(),token:token(),lead:"",members:"",truck:"",start:"07:00",stops:[blankStop()]});
+const clone = o => JSON.parse(JSON.stringify(o));
+
+let state = { date:"", today:"", crews:[], jobs:[], roster:[], history:{} };
+
+/* ---------- Talking to the Google Sheet ---------- */
+/* Talks to the Google Sheet through the script's web address. No Google sign-in needed. */
+const API_URL = "https://script.google.com/macros/s/AKfycbxAZqncRMJnQAmfQGnYoAVWMRMIGiz5Me1b7n02oIGiIcVVOOdcMF840tkN7d1DVPzy/exec";
+async function call(fn, ...args){
+  let r;
+  try{ r = await fetch(API_URL, { method:"POST", headers:{ "Content-Type":"text/plain;charset=utf-8" }, body: JSON.stringify({ fn, args }) }); }
+  catch(e){ throw new Error("No connection. Check your signal or internet and try again."); }
+  if(!r.ok) throw new Error("The work order sheet didn't answer (error " + r.status + "). Try again in a minute.");
+  let d; try{ d = await r.json(); }catch(e){ throw new Error("The work order sheet sent back something unexpected. Try again in a minute."); }
+  if(!d.ok) throw new Error(d.error || "Something went wrong.");
+  return d.result;
+}
+const saveState = document.getElementById("saveState");
+function setSave(msg, err){ saveState.textContent = msg; saveState.classList.toggle("err", !!err); }
+
+let dayTimer=null, dayBusy=false, dayAgain=false, lastSentDay="";
+function queueDaySave(){ clearTimeout(dayTimer); setSave("Saving…"); dayTimer=setTimeout(flushDay, 900); }
+async function flushDay(){
+  clearTimeout(dayTimer);
+  if(dayBusy){ dayAgain=true; return; }
+  const date=state.date, crews=clone(state.crews), body=JSON.stringify(crews);
+  if(body===lastSentDay){ setSave("Saved"); return; }
+  dayBusy=true;
+  try{
+    const merged = await call("apiSaveDay", BOOT.k, date, crews);
+    lastSentDay = body;
+    if(date===state.date) applyCrewUpdates(merged);
+    setSave("Saved " + new Date().toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit"}));
+  }catch(e){
+    setSave("Not saved. Check your internet. Retrying…", true);
+    setTimeout(queueDaySave, 8000);
+  }finally{
+    dayBusy=false;
+    if(dayAgain){ dayAgain=false; flushDay(); }
+  }
+}
+let setTimer=null, lastSentSettings="";
+function queueSettingsSave(){
+  clearTimeout(setTimer);
+  setTimer=setTimeout(async ()=>{
+    const body=JSON.stringify([state.jobs,state.roster]);
+    if(body===lastSentSettings) return;
+    try{ await call("apiSaveSettings", BOOT.k, state.jobs, state.roster); lastSentSettings=body; }
+    catch(e){ setSave("Saved jobs not saved. Check your internet.", true); setTimeout(queueSettingsSave, 8000); }
+  }, 900);
+}
+
+function isUsed(crews){ return crews.some(c=>c.stops.some(s=>s.job.trim()||s.tasks.some(t=>t.text.trim()))); }
+function snapshot(){
+  if(!state.date) return;
+  if(isUsed(state.crews)) state.history[state.date]=clone(state.crews);
+}
+function save(){ snapshot(); queueDaySave(); }
+
+/* Copy what the crew did (check-offs, photos, notes) into the plan without touching what David is typing. */
+function applyCrewUpdates(serverCrews){
+  if(!Array.isArray(serverCrews)) return;
+  const tasks={}, stops={};
+  serverCrews.forEach(c=>(c.stops||[]).forEach(s=>{ stops[s.id]=s; (s.tasks||[]).forEach(t=>tasks[t.id]=t); }));
+  state.crews.forEach(c=>c.stops.forEach(s=>{
+    const os=stops[s.id]; s.crewNote=os?os.crewNote||"":""; s.crewNoteAt=os?os.crewNoteAt||"":"";
+    s.tasks.forEach(t=>{ const ot=tasks[t.id]; t.doneAt=ot?ot.doneAt||"":""; t.photo=ot?ot.photo||"":""; t.doneBy=ot?ot.doneBy||"":""; });
+  }));
+  snapshot();
+  paintStatus();
+}
+
+const esc = s => String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const lines = s => String(s||"").split("\n").map(x=>x.trim()).filter(Boolean);
+const crewNames = c => [c.lead, ...String(c.members||"").split(",").map(x=>x.trim())].filter(Boolean);
+const fmtDate = iso => { if(!iso) return ""; const [y,m,d]=iso.split("-").map(Number); return new Date(y,m-1,d).toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric",year:"numeric"}); };
+const fmtTime = t => { if(!t) return ""; let [h,m]=t.split(":").map(Number); const ap=h>=12?"PM":"AM"; h=h%12||12; return `${h}:${String(m).padStart(2,"0")} ${ap}`; };
+const clockOf = iso => iso ? new Date(iso).toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit"}) : "";
+const crewLink = c => `${BOOT.url}?crew=${c.token}`;
+
+/* ---------- Status painting (done checks, progress, crew notes) ---------- */
+const shortDay = iso => iso ? new Date(iso+"T12:00").toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"}) : "";
+function carryBadge(t){ return t.carried && t.carried.days>1 ? `<span class="carry" title="Carried over. First assigned ${esc(shortDay(t.carried.first))}">Day ${t.carried.days}</span>` : ""; }
+function statusHtml(t){
+  if(!t.doneAt) return carryBadge(t) + (t.photoReq ? `<span class="hint">Needs photo</span>` : "");
+  return `<span class="done">Done ${esc(clockOf(t.doneAt))}</span>${t.doneBy?`<span class="by">by ${esc(t.doneBy)}</span>`:""}${t.photo?`<a href="${esc(t.photo)}" target="_blank" rel="noopener">See photo</a>`:""}`;
+}
+function progressText(c){
+  const all=c.stops.flatMap(s=>s.tasks.filter(t=>t.text.trim())); if(!all.length) return "";
+  return `${all.filter(t=>t.doneAt).length} of ${all.length} done`;
+}
+function noteHtml(s){ return s.crewNote ? `<div class="crew-note"><b>Note from crew${s.crewNoteAt?", "+esc(clockOf(s.crewNoteAt)):""}</b><br>${esc(s.crewNote)}</div>` : ""; }
+function paintStatus(){
+  state.crews.forEach(c=>{
+    const pg=document.getElementById("pg-"+c.id); if(pg){ const t=progressText(c); pg.textContent=t; pg.hidden=!t; }
+    c.stops.forEach(s=>{
+      const n=document.getElementById("cn-"+s.id); if(n) n.innerHTML=noteHtml(s);
+      s.tasks.forEach(t=>{ const el=document.getElementById("st-"+t.id); if(el) el.innerHTML=statusHtml(t); });
+    });
+  });
+}
+
+/* ---------- Plan cards ---------- */
+function whoSummary(c){
+  const names=crewNames(c);
+  const counts=Object.fromEntries(names.map(n=>[n,0]));
+  let crewWide=0;
+  c.stops.forEach(s=>s.tasks.forEach(t=>{ if(!t.text.trim()) return; if(t.who===ALL) crewWide++; else if(t.who in counts) counts[t.who]++; }));
+  if(!names.length) return "";
+  return `<div class="who-sum">${names.map(n=>`<span class="chip ${counts[n]||crewWide?"":"off"}">${esc(n)}: ${counts[n]} task${counts[n]===1?"":"s"}${crewWide?` + ${crewWide} crew`:""}</span>`).join("")}</div>`;
+}
+
+function renderStop(c,s,k){
+  const names=crewNames(c);
+  return `<div class="stop c${k%4}" data-stop="${s.id}">
+    <div class="stop-head">
+      <h3><span class="stop-num">${k+1}</span>Stop ${k+1}${s.job?": "+esc(s.job):""}</h3>
+      <div class="bar">
+        <button class="small" data-act="up" ${k===0?"disabled":""} aria-label="Move stop up">↑</button>
+        <button class="small" data-act="down" ${k===c.stops.length-1?"disabled":""} aria-label="Move stop down">↓</button>
+        <button class="small" data-act="savejob">Save job to list</button>
+        <button class="small danger" data-act="delstop">Remove stop</button>
+      </div>
+    </div>
+    <div class="grid">
+      <label for="pick-${s.id}">Pick a saved job<select id="pick-${s.id}" data-act="pick"><option value="">Choose…</option>${state.jobs.map(j=>`<option value="${j.id}">${esc(j.job)}</option>`).join("")}</select></label>
+      <label for="arrive-${s.id}">Arrive by<input type="time" id="arrive-${s.id}" data-sf="arrive" value="${esc(s.arrive)}"></label>
+      <label for="job-${s.id}">Job name<input id="job-${s.id}" data-sf="job" value="${esc(s.job)}"></label>
+      <label for="address-${s.id}">Address<input id="address-${s.id}" data-sf="address" value="${esc(s.address)}"></label>
+      <label for="gc-${s.id}">Contact on site<input id="gc-${s.id}" data-sf="gc" value="${esc(s.gc)}"></label>
+      <label for="gcPhone-${s.id}">Contact phone<input id="gcPhone-${s.id}" data-sf="gcPhone" value="${esc(s.gcPhone)}"></label>
+    </div>
+    <div style="display:grid;gap:6px">
+      <div class="hint" style="font-weight:600;text-transform:uppercase;letter-spacing:.05em">Tasks, goals and who does them ${s.bidHours?`<span class="bid">· Bid: ${esc(s.bidHours)} hrs total</span>`:""}</div>
+      <div class="task-list">
+        ${s.tasks.map(t=>`<div class="task-row" data-task="${t.id}">
+          <input id="t-${t.id}" data-tf="text" value="${esc(t.text)}" placeholder="What needs to get done" aria-label="Task">
+          <input class="goal" id="g-${t.id}" data-tf="goal" value="${esc(t.goal||"")}" placeholder="Goal: by lunch" aria-label="Goal">
+          <select id="w-${t.id}" data-tf="who" aria-label="Assigned to">${[ALL,...names].map(n=>`<option ${n===t.who?"selected":""}>${esc(n)}</option>`).join("")}${t.who!==ALL&&!names.includes(t.who)?`<option selected>${esc(t.who)}</option>`:""}</select>
+          <label class="photo-opt" for="p-${t.id}" title="Crew must take a photo to mark this done"><input type="checkbox" id="p-${t.id}" data-tp="1" ${t.photoReq?"checked":""}> Photo</label>
+          <span class="st" id="st-${t.id}">${statusHtml(t)}</span>
+          <button class="x" data-act="deltask" aria-label="Remove task">✕</button>
+        </div>`).join("")}
+      </div>
+      <div><button class="small" data-act="addtask">+ Add task</button></div>
+    </div>
+    <div class="grid two">
+      <label for="materials-${s.id}">Load for this stop<textarea id="materials-${s.id}" data-sf="materials" rows="2">${esc(s.materials)}</textarea></label>
+      <label for="notes-${s.id}">Notes for this stop<textarea id="notes-${s.id}" data-sf="notes" rows="2">${esc(s.notes)}</textarea></label>
+    </div>
+    <div id="cn-${s.id}">${noteHtml(s)}</div>
+  </div>`;
+}
+
+function renderCard(c,i){
+  const pg=progressText(c);
+  return `<article class="card" data-id="${c.id}">
+    <div class="card-head">
+      <h2>Crew ${i+1}${c.lead?": "+esc(c.lead):""}</h2>
+      <div class="bar">
+        <span class="progress" id="pg-${c.id}" ${pg?"":"hidden"}>${esc(pg)}</span>
+        <button class="small" data-act="dup">Duplicate crew</button>
+        <button class="small danger" data-act="del">Remove crew</button>
+      </div>
+    </div>
+    <div class="grid">
+      <label for="lead-${c.id}">Crew lead<input id="lead-${c.id}" data-f="lead" list="peopleList" value="${esc(c.lead)}"></label>
+      <label for="members-${c.id}">Crew members<input id="members-${c.id}" data-f="members" value="${esc(c.members)}" placeholder="Separate with commas"></label>
+      <label for="truck-${c.id}">Truck<input id="truck-${c.id}" data-f="truck" value="${esc(c.truck)}"></label>
+      <label for="start-${c.id}">Start time<input type="time" id="start-${c.id}" data-f="start" value="${esc(c.start)}"></label>
+    </div>
+    <div class="linkrow">
+      <button class="small primary" data-act="copylink">Copy crew link</button>
+      <input id="link-${c.id}" readonly value="${esc(crewLink(c))}" aria-label="Crew link to send">
+      <span class="hint">${esc(c.lead||"This crew")}'s permanent link. Send it once. It always opens today's plan.</span>
+    </div>
+    <div class="whosum-slot">${whoSummary(c)}</div>
+    ${c.stops.map((s,k)=>renderStop(c,s,k)).join("")}
+    <div><button data-act="addstop">+ Add stop</button></div>
+  </article>`;
+}
+
+function renderCards(){ document.getElementById("cards").innerHTML = state.crews.map(renderCard).join(""); }
+function rerenderCard(c){
+  const el=document.querySelector(`.card[data-id="${c.id}"]`); if(!el) return renderCards();
+  const tmp=document.createElement("div"); tmp.innerHTML=renderCard(c,state.crews.indexOf(c)); el.replaceWith(tmp.firstElementChild);
+}
+function ctx(el){
+  const card=el.closest(".card[data-id]"); const c=card&&state.crews.find(x=>x.id===card.dataset.id);
+  const se=el.closest("[data-stop]"); const s=c&&se&&c.stops.find(x=>x.id===se.dataset.stop);
+  const te=el.closest("[data-task]"); const t=s&&te&&s.tasks.find(x=>x.id===te.dataset.task);
+  return {c,s,t};
+}
+const cards=document.getElementById("cards");
+cards.addEventListener("input", e=>{
+  const {c,s,t}=ctx(e.target); if(!c) return; const d=e.target.dataset;
+  if(d.f){ c[d.f]=e.target.value; if(d.f==="lead") e.target.closest(".card").querySelector("h2").textContent=`Crew ${state.crews.indexOf(c)+1}${c.lead?": "+c.lead:""}`; }
+  if(d.sf&&s){ s[d.sf]=e.target.value; if(d.sf==="job") { const n=c.stops.indexOf(s)+1; e.target.closest(".stop").querySelector("h3").innerHTML=`<span class="stop-num">${n}</span>Stop ${n}${s.job?": "+esc(s.job):""}`; } }
+  if(d.tf&&t){ t[d.tf]=e.target.value; }
+  if(d.tp&&t){ t.photoReq=e.target.checked; const el=document.getElementById("st-"+t.id); if(el) el.innerHTML=statusHtml(t); }
+  save();
+  if(d.tf) e.target.closest(".card").querySelector(".whosum-slot").innerHTML=whoSummary(c);
+});
+cards.addEventListener("change", e=>{
+  const {c,s}=ctx(e.target); if(!c) return;
+  if(e.target.dataset.f==="lead"||e.target.dataset.f==="members"){ refreshNames(c); return; }
+  if(e.target.dataset.act==="pick"&&s){ const j=state.jobs.find(x=>x.id===e.target.value); if(!j) return;
+    Object.assign(s,{job:j.job,address:j.address,gc:j.gc,gcPhone:j.gcPhone,bidHours:j.bidHours||""}); save(); rerenderCard(c); }
+});
+/* Update the "who" dropdowns in place so the box David just clicked into keeps its focus. */
+function refreshNames(c){
+  const card=document.querySelector(`.card[data-id="${c.id}"]`); if(!card) return;
+  const names=crewNames(c);
+  card.querySelectorAll('select[data-tf="who"]').forEach(sel=>{
+    const t=ctx(sel).t; if(!t) return;
+    sel.innerHTML=[ALL,...names].map(n=>`<option ${n===t.who?"selected":""}>${esc(n)}</option>`).join("")+(t.who!==ALL&&!names.includes(t.who)?`<option selected>${esc(t.who)}</option>`:"");
+  });
+  card.querySelector(".whosum-slot").innerHTML=whoSummary(c);
+}
+function arm(btn,label){
+  if(btn.classList.contains("armed")) return true;
+  btn.classList.add("armed"); btn.textContent="Click to confirm";
+  setTimeout(()=>{btn.classList.remove("armed");btn.textContent=label;},3000); return false;
+}
+async function copyLink(c, btn){
+  const input=document.getElementById("link-"+c.id);
+  await flushDay();
+  let ok=false;
+  try{ await navigator.clipboard.writeText(input.value); ok=true; }catch(e){}
+  if(!ok){ input.focus(); input.select(); try{ ok=document.execCommand("copy"); }catch(e){} }
+  btn.textContent = ok ? "Copied. Paste it in a text" : "Press Ctrl + C to copy";
+  setTimeout(()=>btn.textContent="Copy crew link", 2500);
+}
+cards.addEventListener("click", e=>{
+  const btn=e.target.closest("button[data-act]"); if(!btn) return;
+  const {c,s,t}=ctx(btn); if(!c) return; const a=btn.dataset.act;
+  if(a==="copylink"){ copyLink(c,btn); return; }
+  if(a==="dup"){ const copy=clone(c); copy.id=uid(); copy.token=token(); copy.lead=""; copy.members=""; copy.stops.forEach(x=>{x.id=uid();x.crewNote="";x.crewNoteAt="";x.tasks.forEach(y=>{y.id=uid();y.who=ALL;y.doneAt="";y.photo="";y.doneBy="";delete y.carried;});}); state.crews.splice(state.crews.indexOf(c)+1,0,copy); save(); renderCards(); return; }
+  if(a==="del"){ if(!arm(btn,"Remove crew")) return; state.crews=state.crews.filter(x=>x!==c); save(); renderCards(); return; }
+  if(a==="addstop"){ c.stops.push(blankStop()); save(); rerenderCard(c); return; }
+  if(!s) return;
+  if(a==="delstop"){ if(!arm(btn,"Remove stop")) return; s.tasks.forEach(x=>dismissCarry(c,x)); c.stops=c.stops.filter(x=>x!==s); save(); rerenderCard(c); return; }
+  if(a==="up"||a==="down"){ const i=c.stops.indexOf(s), j=a==="up"?i-1:i+1; if(j<0||j>=c.stops.length) return; [c.stops[i],c.stops[j]]=[c.stops[j],c.stops[i]]; save(); rerenderCard(c); return; }
+  if(a==="addtask"){ s.tasks.push(task()); save(); rerenderCard(c); const last=s.tasks[s.tasks.length-1]; document.getElementById("t-"+last.id)?.focus(); return; }
+  if(a==="deltask"&&t){ dismissCarry(c,t); s.tasks=s.tasks.filter(x=>x!==t); save(); rerenderCard(c); return; }
+  if(a==="savejob"){
+    if(!s.job.trim()){ btn.textContent="Add a job name first"; setTimeout(()=>btn.textContent="Save job to list",2000); return; }
+    const ex=state.jobs.find(j=>j.job.toLowerCase()===s.job.trim().toLowerCase());
+    const rec={job:s.job.trim(),address:s.address,gc:s.gc,gcPhone:s.gcPhone};
+    if(ex) Object.assign(ex,rec); else state.jobs.push({id:uid(),...rec});
+    state.jobs.sort((a,b)=>a.job.localeCompare(b.job));
+    queueSettingsSave(); btn.textContent=ex?"Job updated":"Job saved"; setTimeout(()=>rerenderCard(c),900);
+  }
+});
+document.getElementById("addSheet").onclick=()=>{ state.crews.push(blankCrew()); save(); renderCards(); };
+const nd=document.getElementById("newDay"), ndh=document.getElementById("newDayHint");
+nd.onclick=()=>{
+  if(!nd.classList.contains("armed")){ nd.classList.add("armed"); nd.textContent="Confirm new day"; ndh.hidden=false;
+    setTimeout(()=>{nd.classList.remove("armed");nd.textContent="Start a new day";ndh.hidden=true;},5000); return; }
+  const [y,m,d]=(state.date).split("-").map(Number); let nx=new Date(y,m-1,d+1);
+  if(nx.getDay()===6) nx=new Date(y,m-1,d+3); else if(nx.getDay()===0) nx=new Date(y,m-1,d+2);
+  nd.classList.remove("armed"); nd.textContent="Start a new day"; ndh.hidden=true;
+  loadDate(`${nx.getFullYear()}-${String(nx.getMonth()+1).padStart(2,"0")}-${String(nx.getDate()).padStart(2,"0")}`);
+};
+
+/* ---------- Printed sheet ---------- */
+function renderSheets(){
+  const n=state.crews.length;
+  document.getElementById("sheets").innerHTML = n ? state.crews.map((c,i)=>{
+    const names=crewNames(c);
+    const stops=c.stops.map((s,k)=>{
+      const tasks=s.tasks.filter(t=>t.text.trim());
+      const contact=[s.gc,s.gcPhone].filter(x=>String(x||"").trim()).map(esc).join(", ");
+      return `<div class="sh-stop">
+        <div class="sh-h"><span>Stop ${k+1} of ${c.stops.length}${s.job?": "+esc(s.job):""}</span><span>${s.arrive?"Arrive "+esc(fmtTime(s.arrive)):""}</span></div>
+        ${s.address||contact?`<div class="sh-meta">${s.address?`<span>${esc(s.address)}</span>`:""}${contact?`<span>Contact: ${contact}</span>`:""}</div>`:""}
+        ${tasks.length?`<table class="tasks"><tbody>${tasks.map(t=>`<tr><td class="c"><span class="box"></span></td><td class="who-cell">${esc(t.who)}</td><td>${esc(t.text)}</td><td class="goal">${esc(t.goal||"")}${t.carried&&t.carried.days>1?`<br><span style="font-size:8.5pt">Carried, day ${t.carried.days}</span>`:""}</td></tr>`).join("")}</tbody></table>`:""}
+        ${s.materials||s.notes?`<div class="sh-extra">
+          ${s.materials?`<div><span class="sh-k">Load</span><span class="sh-text">${esc(s.materials)}</span></div>`:""}
+          ${s.notes?`<div><span class="sh-k">Notes</span><span class="sh-text">${esc(s.notes)}</span></div>`:""}
+        </div>`:""}
+      </div>`;}).join("");
+    const crew=names.slice(1).join(", ");
+    return `<div class="sheet">
+      <div class="sh-top">
+        <div><div class="sh-co">Commercial Glass Company</div><div class="sh-sub">Work order, crew ${i+1} of ${n}</div></div>
+        <div class="sh-date"><strong>${esc(fmtDate(state.date))}</strong>Start ${esc(fmtTime(c.start))||"______"}</div>
+      </div>
+      <div class="sh-crew">
+        <span><span class="sh-k">Lead</span>${esc(c.lead)}</span>
+        ${crew?`<span><span class="sh-k">Crew</span>${esc(crew)}</span>`:""}
+        ${c.truck?`<span><span class="sh-k">Truck</span>${esc(c.truck)}</span>`:""}
+      </div>
+      ${stops}
+    </div>`;}).join("") : `<div class="tip">No crews yet. Add one on the Plan tab.</div>`;
+}
+document.getElementById("printBtn").onclick=()=>{ renderSheets(); try{ window.print(); }catch(e){} };
+window.addEventListener("beforeprint", renderSheets);
+
+/* ---------- Lists ---------- */
+function renderLists(){
+  document.getElementById("jobList").innerHTML = state.jobs.length ? state.jobs.map(j=>`
+    <div class="lib-row"><span><strong>${esc(j.job)}</strong><br><span class="hint">${esc(j.address)} · ${esc(j.gc)} ${esc(j.gcPhone)}${j.bidHours?` · Bid ${esc(j.bidHours)} hrs`:""}</span></span>
+    <button class="small danger" data-del="${j.id}">Remove</button></div>`).join("") : `<p class="hint">No saved jobs yet. Click "Pull jobs now" to bring them in from the Job Tracker.</p>`;
+  document.getElementById("roster").value = state.roster.join("\n");
+}
+document.getElementById("jobList").addEventListener("click",e=>{
+  const id=e.target.dataset.del; if(!id) return;
+  if(!arm(e.target,"Remove")) return;
+  state.jobs=state.jobs.filter(j=>j.id!==id); queueSettingsSave(); renderLists();
+});
+document.getElementById("roster").addEventListener("input",e=>{ state.roster=lines(e.target.value); queueSettingsSave(); renderPeople(); });
+function renderPeople(){ document.getElementById("peopleList").innerHTML=state.roster.map(p=>`<option value="${esc(p)}">`).join(""); }
+
+/* ---------- Job Tracker pull ---------- */
+const syncMsg=document.getElementById("syncMsg"), pullBtn=document.getElementById("pullBtn");
+function importRows(rows){
+  const head = rows[0].map(h=>String(h||"").toLowerCase());
+  const col = (...keys) => head.findIndex(h=>keys.some(k=>h.includes(k)));
+  const cJob=col("project"), cGc=col("gc","customer"), cPhase=col("phase"), cAddr=col("job address","address"),
+        cSite=col("site contact"), cPhone=col("site phone"), cBid=col("bid man-hours","bid hours","bid hrs","labor hours");
+  if(cJob<0){ syncMsg.textContent = "The Projects tab has no Project column."; return; }
+  const skip = new Set(["paid","cancelled","canceled"]);
+  if(!document.getElementById("inclDone").checked) skip.add("completed");
+  const v = (r,i) => i<0 ? "" : String(r[i]||"").trim();
+  let added=0, updated=0, noAddr=0;
+  rows.slice(1).forEach(r=>{
+    const job=v(r,cJob); if(!job) return;
+    if(skip.has(v(r,cPhase).toLowerCase())) return;
+    const addr=v(r,cAddr), site=v(r,cSite), gcName=v(r,cGc);
+    const rec={job, address:addr, gc: site || gcName, gcPhone: v(r,cPhone), bidHours: v(r,cBid)};
+    if(!addr) noAddr++;
+    const ex=state.jobs.find(j=>j.job.toLowerCase()===job.toLowerCase());
+    if(ex){ for(const k of ["address","gc","gcPhone","bidHours"]) if(rec[k]) ex[k]=rec[k]; updated++; }
+    else { state.jobs.push({id:uid(),...rec}); added++; }
+  });
+  state.jobs.sort((a,b)=>a.job.localeCompare(b.job));
+  queueSettingsSave(); renderLists();
+  syncMsg.textContent = `Done. ${added} new, ${updated} updated.` + (noAddr?` ${noAddr} have no job address in the tracker yet, so fill those in before sending.`:"");
+}
+pullBtn.onclick=async ()=>{
+  pullBtn.disabled=true; syncMsg.textContent="Reading the Job Tracker…";
+  try{ const rows=await call("apiPullTracker", BOOT.k); if(!rows||rows.length<2){ syncMsg.textContent="The Projects tab is empty."; } else importRows(rows); }
+  catch(e){ syncMsg.textContent="Couldn't read the Job Tracker. " + (e&&e.message?e.message:""); }
+  finally{ pullBtn.disabled=false; }
+};
+
+/* ---------- Tabs + date ---------- */
+const tabs={plan:"tab-plan",preview:"tab-preview",history:"tab-history",lists:"tab-lists"};
+function show(name){
+  for(const [sec,tab] of Object.entries(tabs)){ document.getElementById(sec).hidden = sec!==name; document.getElementById(tab).setAttribute("aria-selected", sec===name); }
+  if(name==="preview") renderSheets();
+  if(name==="lists") renderLists();
+  if(name==="history") renderHistoryPicker();
+  if(name==="plan") renderCards();
+}
+for(const [sec,tab] of Object.entries(tabs)) document.getElementById(tab).onclick=()=>show(sec);
+const pd=document.getElementById("planDate");
+function crewsFor(iso){
+  if(state.history[iso]) return clone(state.history[iso]);
+  const before=Object.keys(state.history).filter(d=>d<iso).sort().pop();
+  const base=before?state.history[before]:state.crews;
+  const crews=(base&&base.length?base:[blankCrew()]).map(c=>({id:c.id,token:c.token||token(),lead:c.lead,members:c.members,truck:c.truck,start:"07:00",dismissed:[],stops:[blankStop()]}));
+  return clone(crews);
+}
+
+/* ---------- Carry-over: unfinished work rolls to the next planned day ----------
+   Each carried copy remembers the task it came from (src), the day it was first assigned (first) and how many days it has been on the list (days).
+   Removing a carried task with the X records it in the crew's "dismissed" list so it doesn't come back. */
+function prevPlanned(iso){ return Object.keys(state.history).filter(d=>d<iso && isUsed(state.history[d])).sort().pop(); }
+async function refreshPrev(iso){
+  const p=prevPlanned(iso); if(!p) return;
+  try{ const fresh=await call("apiGetDay", BOOT.k, p); if(fresh) state.history[p]=fresh; }catch(e){}
+}
+function dismissCarry(c,t){ if(t && t.carried && t.carried.src){ c.dismissed=c.dismissed||[]; if(!c.dismissed.includes(t.carried.src)) c.dismissed.push(t.carried.src); } }
+const isBlankStop = s => !s.job.trim() && !s.address.trim() && !s.tasks.some(t=>t.text.trim()) && !String(s.materials||"").trim() && !String(s.notes||"").trim();
+function carryInto(iso, crews){
+  if(!state.today || iso < state.today) return false;
+  const p=prevPlanned(iso); if(!p || p > state.today) return false;
+  const src=state.history[p], srcTasks={};
+  src.forEach(c=>(c.stops||[]).forEach(s=>(s.tasks||[]).forEach(t=>{ if(String(t.text||"").trim()) srcTasks[t.id]=t; })));
+  let changed=false;
+  crews.forEach(c=>{
+    c.dismissed=c.dismissed||[];
+    c.stops.forEach(s=>{
+      const keep=s.tasks.filter(t=>!(t.carried && !t.doneAt && srcTasks[t.carried.src] && srcTasks[t.carried.src].doneAt));
+      if(keep.length!==s.tasks.length){ s.tasks=keep; changed=true; }
+    });
+    const before=c.stops.length;
+    c.stops=c.stops.filter(s=>!(s.carriedStop && !s.tasks.length));
+    if(c.stops.length!==before) changed=true;
+    const srcCrew=src.find(x=>x.id===c.id); if(!srcCrew) return;
+    const have=new Set(); c.stops.forEach(s=>s.tasks.forEach(t=>{ if(t.carried) have.add(t.carried.src); }));
+    const newStops=[];
+    srcCrew.stops.forEach(ss=>{
+      const left=(ss.tasks||[]).filter(t=>String(t.text||"").trim() && !t.doneAt && !have.has(t.id) && !c.dismissed.includes(t.id));
+      if(!left.length) return;
+      const job=String(ss.job||"").trim().toLowerCase();
+      let target=job ? c.stops.find(x=>x.job.trim().toLowerCase()===job) || newStops.find(x=>x.job.trim().toLowerCase()===job) : null;
+      if(!target){
+        target={id:uid(),arrive:"",job:ss.job||"",address:ss.address||"",gc:ss.gc||"",gcPhone:ss.gcPhone||"",bidHours:ss.bidHours||"",materials:"",notes:"",tasks:[],carriedStop:true};
+        newStops.push(target);
+      }
+      const copies=left.map(t=>({id:uid(),text:t.text,who:t.who,goal:t.goal||"",photoReq:!!t.photoReq,
+        carried:{src:t.id, first:(t.carried&&t.carried.first)||p, days:((t.carried&&t.carried.days)||1)+1}}));
+      const firstOwn=target.tasks.findIndex(t=>!t.carried);
+      if(firstOwn<0) target.tasks.push(...copies); else target.tasks.splice(firstOwn,0,...copies);
+      changed=true;
+    });
+    if(newStops.length){
+      c.stops=c.stops.filter(s=>!isBlankStop(s));
+      c.stops.unshift(...newStops);
+    }
+    if(!c.stops.length){ c.stops.push(blankStop()); changed=true; }
+  });
+  return changed;
+}
+
+async function loadDate(iso){
+  if(!iso) return;
+  await flushDay();
+  state.date=iso; pd.value=iso;
+  state.crews=crewsFor(iso);
+  lastSentDay="";
+  await refreshPrev(iso);
+  if(iso===state.date && carryInto(iso, state.crews)) save();
+  renderCards(); renderSheets();
+  refreshStatus();
+}
+pd.onchange=()=>loadDate(pd.value);
+
+/* ---------- Live check-offs from the crew ---------- */
+async function refreshStatus(){
+  const date=state.date;
+  try{ const crews=await call("apiGetDay", BOOT.k, date); if(date===state.date && crews) applyCrewUpdates(crews); }catch(e){}
+  await refreshPrev(date);
+  if(date===state.date && carryInto(date, state.crews)){ save(); renderCards(); }
+}
+setInterval(()=>{ if(document.visibilityState==="visible") refreshStatus(); }, 45000);
+document.addEventListener("visibilitychange", ()=>{ if(document.visibilityState==="visible") refreshStatus(); });
+
+/* ---------- Look back by job ---------- */
+function renderHistoryPicker(){
+  snapshot();
+  const jobs=new Set();
+  Object.values(state.history).forEach(day=>day.forEach(c=>c.stops.forEach(s=>{ if(s.job.trim()) jobs.add(s.job.trim()); })));
+  const sel=document.getElementById("histJob"), cur=sel.value;
+  const list=[...jobs].sort((a,b)=>a.localeCompare(b));
+  sel.innerHTML = list.length ? list.map(j=>`<option ${j===cur?"selected":""}>${esc(j)}</option>`).join("") : `<option value="">No planned days yet</option>`;
+  renderHistory();
+}
+function renderHistory(){
+  const job=document.getElementById("histJob").value, out=document.getElementById("histOut");
+  if(!job){ out.innerHTML=`<p class="hint">Once you plan a few days, every job you scheduled shows up here.</p>`; return; }
+  const rows=[]; let days=0;
+  Object.keys(state.history).sort().reverse().forEach(date=>{
+    let hit=false;
+    state.history[date].forEach(c=>c.stops.forEach(s=>{
+      if(s.job.trim()!==job) return; hit=true;
+      s.tasks.filter(t=>t.text.trim()).forEach(t=>rows.push({date,lead:c.lead,t}));
+    }));
+    if(hit) days++;
+  });
+  const bid=(state.jobs.find(j=>j.job===job)||{}).bidHours;
+  const done=rows.filter(r=>r.t.doneAt).length;
+  out.innerHTML = `<p class="hint" style="font-size:.9rem">Scheduled on ${days} day${days===1?"":"s"}. ${done} of ${rows.length} tasks marked done${bid?`. Bid ${esc(bid)} man-hours`:""}. Compare to the hours in QB Workforce for this job.</p>
+  <table class="hist"><thead><tr><th>Date</th><th>Crew</th><th>Who</th><th>Task</th><th>Goal</th><th>Done</th></tr></thead><tbody>
+  ${rows.map(r=>`<tr><td class="d">${esc(new Date(r.date+"T12:00").toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"}))}</td><td>${esc(r.lead)}</td><td>${esc(r.t.who)}</td><td>${esc(r.t.text)}</td><td>${esc(r.t.goal||"")}</td><td class="d">${r.t.doneAt?esc(clockOf(r.t.doneAt))+(r.t.doneBy?" by "+esc(r.t.doneBy):""):"Not done"}${r.t.carried&&r.t.carried.days>1?" (day "+r.t.carried.days+")":""}</td></tr>`).join("")}
+  </tbody></table>`;
+}
+document.getElementById("histJob").onchange=renderHistory;
+
+/* ---------- Tips box (remembered on this computer) ---------- */
+let hideTip=false; try{ hideTip=localStorage.getItem("cgc-hide-tip")==="1"; }catch(e){}
+function applyTip(){ document.getElementById("planTip").hidden=hideTip; document.getElementById("showTipRow").hidden=!hideTip; }
+document.getElementById("hideTip").onclick=()=>{ hideTip=true; try{localStorage.setItem("cgc-hide-tip","1");}catch(e){} applyTip(); };
+document.getElementById("showTip").onclick=()=>{ hideTip=false; try{localStorage.setItem("cgc-hide-tip","0");}catch(e){} applyTip(); };
+applyTip();
+
+/* ---------- Start ---------- */
+(async function start(){
+  const loading=document.getElementById("loading");
+  try{
+    const d=await call("apiInit", BOOT.k);
+    state.jobs=d.jobs||[]; state.roster=d.roster||[]; state.history=d.history||{};
+    lastSentSettings=JSON.stringify([state.jobs,state.roster]);
+    state.today=d.today; state.date=d.today; pd.value=d.today;
+    state.crews=crewsFor(d.today);
+    if(state.history[d.today]) lastSentDay=JSON.stringify(state.history[d.today]);
+    if(carryInto(d.today, state.crews)) save();
+    renderPeople(); renderCards(); renderSheets();
+    loading.hidden=true;
+  }catch(e){
+    loading.classList.add("err");
+    loading.textContent="Couldn't load the work orders. " + (e&&e.message?e.message:"Check your internet and reload the page.");
+  }
+})();
+</script>
+</body></html>

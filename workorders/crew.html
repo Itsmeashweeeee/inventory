@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CGC Work Order</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..100,600..800&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Crew phone page: one column, big tap targets, light only so it reads in sunlight */
+:root{
+  --bg:#eef1f2; --panel:#ffffff; --fg:#14201f; --muted:#56615f; --line:#cfd8d8;
+  --ok:#2f7a3a; --ok-soft:#e3f2e5; --warn:#a4400f;
+  --s0:#0d6b70; --s1:#a8590a; --s2:#6a3fa0; --s3:#2f7a3a;
+  --display:"Archivo",system-ui,sans-serif; --body:"IBM Plex Sans",system-ui,sans-serif;
+  color-scheme:light;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+[hidden]{display:none!important}
+body{background:var(--bg);color:var(--fg);font-family:var(--body);font-size:17px;line-height:1.4}
+.wrap{max-width:640px;margin:0 auto;padding-block:16px 48px;padding-left:max(14px,env(safe-area-inset-left,0px));padding-right:max(14px,env(safe-area-inset-right,0px));display:grid;gap:14px}
+.co{font-size:.78rem;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+h1{font-family:var(--display);font-stretch:85%;font-weight:800;font-size:1.7rem;line-height:1.1;margin:2px 0 6px}
+.meta{display:grid;gap:2px;font-size:.95rem}
+.meta b{font-weight:600}
+.k{font-size:.72rem;font-weight:600;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);margin-right:6px}
+.prog{display:grid;gap:6px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+.prog-top{display:flex;justify-content:space-between;font-weight:600}
+.bar{height:10px;border-radius:99px;background:#dfe6e6;overflow:hidden}
+.bar span{display:block;height:100%;background:var(--ok);width:0;transition:width .3s}
+.stop{--sc:var(--s0);background:var(--panel);border:1px solid var(--line);border-left:8px solid var(--sc);border-radius:10px;padding:14px;display:grid;gap:12px}
+.stop.c1{--sc:var(--s1)} .stop.c2{--sc:var(--s2)} .stop.c3{--sc:var(--s3)}
+.stop-h{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+.stop-h h2{margin:0;font-family:var(--display);font-stretch:88%;font-weight:700;font-size:1.25rem;line-height:1.2;color:var(--sc);display:flex;gap:8px;align-items:flex-start}
+.num{flex:none;display:inline-grid;place-items:center;width:1.5em;height:1.5em;border-radius:50%;background:var(--sc);color:#fff;font-size:.9em}
+.arrive{white-space:nowrap;font-weight:600;font-size:.95rem}
+.where{display:grid;gap:6px;font-size:.95rem}
+.where a{color:var(--s0);font-weight:600}
+.links{display:flex;flex-wrap:wrap;gap:8px}
+.pill{display:inline-block;padding:7px 12px;border-radius:99px;border:1px solid var(--line);background:var(--bg);color:var(--fg)!important;text-decoration:none;font-size:.9rem;font-weight:600}
+.tasks{display:grid;gap:8px}
+.task{display:grid;grid-template-columns:34px minmax(0,1fr);gap:10px;align-items:start;width:100%;text-align:left;font:inherit;color:inherit;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:12px;cursor:pointer;min-height:64px}
+.task:focus-visible{outline:3px solid var(--s0);outline-offset:2px}
+.check{width:30px;height:30px;border-radius:50%;border:2.5px solid var(--muted);display:grid;place-items:center;background:var(--panel)}
+.task.done{background:var(--ok-soft);border-color:#b9dcbe}
+.task.done .check{background:var(--ok);border-color:var(--ok)}
+.task.done .check::after{content:"";width:8px;height:15px;border:solid #fff;border-width:0 3px 3px 0;transform:rotate(45deg) translate(-1px,-2px)}
+.task.busy{opacity:.6}
+.t-text{font-weight:600}
+.t-sub{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:.88rem;color:var(--muted);margin-top:3px}
+.t-sub .who{color:var(--fg);font-weight:600}
+.t-sub .goal{color:var(--fg)}
+.t-sub .ok{color:var(--ok);font-weight:600}
+.t-sub .ph{color:var(--warn);font-weight:600}
+.t-sub .undo{color:var(--warn);font-weight:600}
+.extra{font-size:.95rem;display:grid;gap:4px;white-space:pre-wrap}
+.note{display:grid;gap:6px}
+.note label{font-size:.78rem;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+textarea{font:inherit;font-size:1rem;width:100%;min-height:70px;border:1px solid var(--line);border-radius:8px;padding:10px;background:var(--bg);color:var(--fg)}
+textarea:focus{outline:2px solid var(--s0)}
+.send{display:flex;gap:10px;align-items:center}
+button.btn{font:inherit;font-weight:600;font-size:.95rem;border-radius:8px;padding:10px 16px;border:1px solid var(--s0);background:var(--s0);color:#fff;cursor:pointer}
+button.btn.ghost{background:var(--panel);color:var(--fg);border-color:var(--line)}
+.sent{font-size:.85rem;color:var(--ok);font-weight:600}
+.msg{background:#fff4e8;border:1px solid #f0c99c;color:#7a3b06;border-radius:10px;padding:12px;font-size:.95rem}
+.center{text-align:center;color:var(--muted);padding:40px 10px}
+.foot{display:flex;justify-content:center}
+.tip{font-size:.85rem;color:var(--muted);text-align:center;margin:0}
+.t-sub .carried{color:var(--warn);font-weight:600}
+.who-bg{position:fixed;inset:0;background:rgba(20,32,31,.45);display:flex;align-items:flex-end;justify-content:center;z-index:30}
+.who-sheet{background:var(--panel);width:100%;max-width:640px;border-radius:16px 16px 0 0;padding:18px 16px;padding-bottom:max(18px,env(safe-area-inset-bottom,0px));display:grid;gap:12px}
+.who-sheet h3{margin:0;font-family:var(--display);font-stretch:88%;font-size:1.25rem}
+.who-task{margin:0;color:var(--muted);font-size:.95rem}
+.who-names{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px}
+.who-names .btn{padding:14px 12px;font-size:1.05rem}
+</style>
+</head><body>
+<div class="wrap">
+  <div id="state" class="center">Loading your work order…</div>
+  <div id="err" class="msg" hidden></div>
+  <div id="page" hidden>
+    <div>
+      <div class="co">Commercial Glass Company</div>
+      <h1 id="day"></h1>
+      <div class="meta" id="meta"></div>
+    </div>
+  </div>
+  <div class="prog" id="prog" hidden>
+    <div class="prog-top"><span id="progText"></span><span id="progPct"></span></div>
+    <div class="bar"><span id="progBar"></span></div>
+  </div>
+  <div id="stops" style="display:grid;gap:14px"></div>
+  <div class="foot" id="foot" hidden><button class="btn ghost" id="refresh">Refresh</button></div>
+  <p class="tip" id="tip" hidden>Tip: save this page to your home screen. iPhone: tap Share, then Add to Home Screen. Android: tap the three dots, then Add to Home screen. It opens today's work every time.</p>
+</div>
+<input type="file" id="cam" accept="image/*" capture="environment" hidden>
+<div class="who-bg" id="whoBg" hidden>
+  <div class="who-sheet" role="dialog" aria-modal="true" aria-labelledby="whoTitle">
+    <h3 id="whoTitle">Who finished it?</h3>
+    <p class="who-task" id="whoTask"></p>
+    <div class="who-names" id="whoNames"></div>
+    <button class="btn ghost" id="whoCancel">Cancel</button>
+  </div>
+</div>
+
+<script>
+const Q = new URLSearchParams(location.search);
+const BOOT = { c: Q.get("crew") || "", k: Q.get("k") || "", url: location.href.split("?")[0].split("#")[0].replace(/[^\/]*$/, "crew.html") };
+let crew=null, date="", pendingPhotoTask=null, pendingBy="", pickFor=null;
+/* Google strips anything after two slashes when it loads this page, so web addresses are built in pieces. */
+const MAPS_URL=["https:","","www.google.com","maps","search",""].join("/");
+const armed={}, drafts={};
+
+/* Talks to the Google Sheet through the script's web address. No Google sign-in needed. */
+const API_URL = "https://script.google.com/macros/s/AKfycbxAZqncRMJnQAmfQGnYoAVWMRMIGiz5Me1b7n02oIGiIcVVOOdcMF840tkN7d1DVPzy/exec";
+async function call(fn, ...args){
+  let r;
+  try{ r = await fetch(API_URL, { method:"POST", headers:{ "Content-Type":"text/plain;charset=utf-8" }, body: JSON.stringify({ fn, args }) }); }
+  catch(e){ throw new Error("No connection. Check your signal or internet and try again."); }
+  if(!r.ok) throw new Error("The work order sheet didn't answer (error " + r.status + "). Try again in a minute.");
+  let d; try{ d = await r.json(); }catch(e){ throw new Error("The work order sheet sent back something unexpected. Try again in a minute."); }
+  if(!d.ok) throw new Error(d.error || "Something went wrong.");
+  return d.result;
+}
+const esc = s => String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const fmtTime = t => { if(!t) return ""; let [h,m]=t.split(":").map(Number); const ap=h>=12?"PM":"AM"; h=h%12||12; return `${h}:${String(m).padStart(2,"0")} ${ap}`; };
+const clockOf = iso => iso ? new Date(iso).toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit"}) : "";
+const dayName = iso => { const [y,m,d]=iso.split("-").map(Number); return new Date(y,m-1,d).toLocaleDateString("en-US",{weekday:"long",month:"short",day:"numeric"}); };
+const telOf = p => String(p||"").replace(/[^\d+]/g,"");
+const errBox=document.getElementById("err");
+function showErr(msg){ errBox.textContent=msg; errBox.hidden=false; clearTimeout(showErr.t); showErr.t=setTimeout(()=>errBox.hidden=true, 7000); }
+function errText(e){ const m=e&&e.message?String(e.message):""; return /network|failed to fetch|timed out|NetworkError/i.test(m)||!m ? "No signal. It didn't save. Try again when you have service." : m; }
+
+function render(){
+  document.getElementById("state").hidden=true;
+  document.getElementById("page").hidden=false;
+  document.getElementById("foot").hidden=false;
+  document.getElementById("tip").hidden=false;
+  document.getElementById("day").textContent=dayName(date);
+  const members=String(crew.members||"").split(",").map(x=>x.trim()).filter(Boolean).join(", ");
+  document.getElementById("meta").innerHTML=
+    `<div><span class="k">Start</span><b>${esc(fmtTime(crew.start))||"See David"}</b>${crew.truck?`<span class="k" style="margin-left:14px">Truck</span><b>${esc(crew.truck)}</b>`:""}</div>
+     <div><span class="k">Lead</span><b>${esc(crew.lead)}</b>${members?`<span class="k" style="margin-left:14px">Crew</span>${esc(members)}`:""}</div>`;
+  const stops=crew.stops.filter(s=>s.job.trim()||s.tasks.some(t=>t.text.trim()));
+  const all=stops.flatMap(s=>s.tasks.filter(t=>t.text.trim()));
+  const done=all.filter(t=>t.doneAt).length;
+  const prog=document.getElementById("prog");
+  prog.hidden=!all.length;
+  document.getElementById("progText").textContent=`${done} of ${all.length} tasks done`;
+  document.getElementById("progPct").textContent=all.length?Math.round(done/all.length*100)+"%":"";
+  document.getElementById("progBar").style.width=(all.length?done/all.length*100:0)+"%";
+  document.getElementById("stops").innerHTML = stops.length ? stops.map((s,k)=>{
+    const tasks=s.tasks.filter(t=>t.text.trim());
+    const maps=s.address?MAPS_URL+"?api=1&query="+encodeURIComponent(s.address):"";
+    return `<section class="stop c${k%4}">
+      <div class="stop-h"><h2><span class="num">${k+1}</span><span>${esc(s.job||"Stop "+(k+1))}</span></h2>${s.arrive?`<span class="arrive">Arrive ${esc(fmtTime(s.arrive))}</span>`:""}</div>
+      ${s.address||s.gc||s.gcPhone?`<div class="where">
+        ${s.address?`<div>${esc(s.address)}</div>`:""}
+        ${s.gc?`<div><span class="k">Contact</span>${esc(s.gc)}</div>`:""}
+        <div class="links">
+          ${maps?`<a class="pill" href="${maps}" target="_blank" rel="noopener">Open in Maps</a>`:""}
+          ${s.gcPhone?`<a class="pill" href="tel:${esc(telOf(s.gcPhone))}">Call ${esc(s.gcPhone)}</a>`:""}
+        </div></div>`:""}
+      ${tasks.length?`<div class="tasks">${tasks.map(t=>taskHtml(t)).join("")}</div>`:""}
+      ${s.materials||s.notes?`<div class="extra">${s.materials?`<div><span class="k">Load</span>${esc(s.materials)}</div>`:""}${s.notes?`<div><span class="k">Notes</span>${esc(s.notes)}</div>`:""}</div>`:""}
+      <div class="note">
+        <label for="note-${s.id}">Note to David (problem, missing material, can't finish)</label>
+        <textarea id="note-${s.id}" data-draft="${s.id}" maxlength="1000">${esc(s.id in drafts?drafts[s.id]:(s.crewNote||""))}</textarea>
+        <div class="send"><button class="btn" data-note="${s.id}">Send note</button><span class="sent" id="sent-${s.id}">${s.crewNoteAt?"Sent "+esc(clockOf(s.crewNoteAt)):""}</span></div>
+      </div>
+    </section>`;}).join("") : `<div class="center">Nothing is planned for your crew yet. Check with David.</div>`;
+}
+function taskHtml(t){
+  const sub=[`<span class="who">${esc(t.who)}</span>`];
+  if(t.goal) sub.push(`<span class="goal">Goal: ${esc(t.goal)}</span>`);
+  if(t.carried && t.carried.days>1 && !t.doneAt) sub.push(`<span class="carried">Day ${t.carried.days}, carried over</span>`);
+  if(t.doneAt) sub.push(`<span class="ok">Done ${esc(clockOf(t.doneAt))}${t.doneBy?" by "+esc(t.doneBy):""}${t.photo?" with photo":""}</span>`);
+  else if(t.photoReq) sub.push(`<span class="ph">Photo needed to finish</span>`);
+  if(armed[t.id]) sub.push(`<span class="undo">Tap again to undo</span>`);
+  return `<button class="task ${t.doneAt?"done":""}" data-task="${t.id}" aria-pressed="${t.doneAt?"true":"false"}">
+    <span class="check" aria-hidden="true"></span>
+    <span><span class="t-text">${esc(t.text)}</span><span class="t-sub">${sub.join("")}</span></span>
+  </button>`;
+}
+document.getElementById("stops").addEventListener("input", e=>{ const id=e.target.dataset&&e.target.dataset.draft; if(id) drafts[id]=e.target.value; });
+function findTask(id){ for(const s of crew.stops) for(const t of s.tasks) if(t.id===id) return t; return null; }
+
+document.getElementById("stops").addEventListener("click", async e=>{
+  const nb=e.target.closest("button[data-note]");
+  if(nb){ sendNote(nb.dataset.note, nb); return; }
+  const b=e.target.closest("button[data-task]"); if(!b || b.classList.contains("busy")) return;
+  const t=findTask(b.dataset.task); if(!t) return;
+  if(t.doneAt){
+    if(!armed[t.id]){ armed[t.id]=true; render(); setTimeout(()=>{ if(armed[t.id]){ delete armed[t.id]; render(); } },3000); return; }
+    delete armed[t.id];
+    return mark(t,false,b);
+  }
+  askWho(t);
+});
+
+/* ---------- Who finished it? ---------- */
+const whoBg=document.getElementById("whoBg");
+function crewNamesOf(){ return [crew.lead, ...String(crew.members||"").split(",").map(x=>x.trim())].filter(Boolean); }
+function askWho(t){
+  const names=crewNamesOf();
+  if(!names.length){ finish(t,""); return; }
+  let last=""; try{ last=localStorage.getItem("cgc-last-name")||""; }catch(e){}
+  pickFor=t;
+  document.getElementById("whoTask").textContent=t.text;
+  document.getElementById("whoNames").innerHTML=names.map(n=>`<button class="btn ${n===last?"":"ghost"}" data-name="${esc(n)}">${esc(n)}</button>`).join("");
+  whoBg.hidden=false;
+}
+function closeWho(){ whoBg.hidden=true; pickFor=null; }
+document.getElementById("whoNames").addEventListener("click", e=>{
+  const b=e.target.closest("button[data-name]"); if(!b || !pickFor) return;
+  const t=pickFor, name=b.dataset.name; closeWho();
+  try{ localStorage.setItem("cgc-last-name", name); }catch(e){}
+  finish(t,name);
+});
+document.getElementById("whoCancel").onclick=closeWho;
+whoBg.addEventListener("click", e=>{ if(e.target===whoBg) closeWho(); });
+document.addEventListener("keydown", e=>{ if(e.key==="Escape" && !whoBg.hidden) closeWho(); });
+function finish(t,name){
+  if(t.photoReq){ pendingPhotoTask=t; pendingBy=name; const cam=document.getElementById("cam"); cam.value=""; cam.click(); return; }
+  mark(t,true,null,name);
+}
+async function mark(t,done,b,by){
+  const before=t.doneAt, beforeBy=t.doneBy;
+  t.doneAt = done ? new Date().toISOString() : ""; t.doneBy = done ? (by||"") : ""; render();
+  try{ crew = await call("apiMark", BOOT.c, t.id, done, by||""); render(); }
+  catch(e){ t.doneAt=before; t.doneBy=beforeBy; render(); showErr(errText(e)); }
+}
+document.getElementById("cam").addEventListener("change", async e=>{
+  const f=e.target.files&&e.target.files[0], t=pendingPhotoTask, by=pendingBy; pendingPhotoTask=null; pendingBy="";
+  if(!f||!t) return;
+  const b=document.querySelector(`button[data-task="${t.id}"]`); if(b){ b.classList.add("busy"); b.querySelector(".t-sub").insertAdjacentHTML("beforeend",`<span class="ph">Uploading photo…</span>`); }
+  try{
+    const data=await shrink(f);
+    crew = await call("apiPhoto", BOOT.c, t.id, data, by); render();
+  }catch(err){ render(); showErr(err&&err.message&&!/network|fetch/i.test(err.message)?err.message:"The photo didn't upload. Try again when you have service."); }
+});
+function shrink(file){
+  return new Promise((res,rej)=>{
+    const img=new Image(), url=URL.createObjectURL(file);
+    img.onload=()=>{ const max=1600, r=Math.min(1, max/Math.max(img.width,img.height));
+      const cv=document.createElement("canvas"); cv.width=Math.round(img.width*r); cv.height=Math.round(img.height*r);
+      cv.getContext("2d").drawImage(img,0,0,cv.width,cv.height); URL.revokeObjectURL(url); res(cv.toDataURL("image/jpeg",0.8)); };
+    img.onerror=()=>{ URL.revokeObjectURL(url); rej(new Error("That photo could not be read. Try again.")); };
+    img.src=url;
+  });
+}
+async function sendNote(stopId, btn){
+  const text=document.getElementById("note-"+stopId).value.trim();
+  btn.disabled=true; btn.textContent="Sending…";
+  try{ crew = await call("apiNote", BOOT.c, stopId, text); delete drafts[stopId]; render(); }
+  catch(e){ btn.disabled=false; btn.textContent="Send note"; showErr(errText(e)); }
+}
+async function load(){
+  try{
+    const d=await call("apiCrew", BOOT.c);
+    date=d.date;
+    if(d.missing){ document.getElementById("state").textContent = d.standing
+        ? "Nothing is planned for your crew on " + dayName(d.date) + " yet. Check back after David finishes the plan, then tap Refresh."
+        : "This work order isn't there anymore. Ask David for your crew link.";
+      document.getElementById("foot").hidden=false; return; }
+    crew=d.crew; render();
+  }catch(e){ document.getElementById("state").textContent=errText(e)+" Pull down to reload."; }
+}
+document.getElementById("refresh").onclick=load;
+load();
+</script>
+</body></html>
