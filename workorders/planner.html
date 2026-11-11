@@ -199,6 +199,14 @@ td.goal{width:16%;text-align:right!important;color:#333}
       <label for="roster">One name per line <span class="hint">These show up as suggestions when you type crew names.</span>
         <textarea id="roster" rows="6"></textarea></label>
     </div>
+    <div class="card">
+      <div class="card-head"><h2>End-of-day reminder</h2></div>
+      <p class="hint" style="margin:0;font-size:.88rem">Around 4:00 PM on workdays, the people below get one email listing every task on today's plan that wasn't marked done, with crew notes. Tasks on the list 3 or more days show in red. No email goes out if everything got finished.</p>
+      <label for="alertOn" style="display:flex;align-items:center;gap:8px;text-transform:none;letter-spacing:0;font-weight:500;font-size:.95rem;color:var(--fg)"><input type="checkbox" id="alertOn" style="width:auto"> Send the reminder</label>
+      <label for="alertEmails">Send it to <span class="hint">One email per line, like David's and yours.</span>
+        <textarea id="alertEmails" rows="3" placeholder="name@commercialglassco.com"></textarea></label>
+      <div class="bar"><button id="alertTest">Send a test now</button><span class="hint" id="alertMsg"></span></div>
+    </div>
   </section>
 </div>
 
@@ -215,7 +223,7 @@ const blankStop = () => ({id:uid(),arrive:"",job:"",address:"",gc:"",gcPhone:"",
 const blankCrew = () => ({id:uid(),token:token(),lead:"",members:"",truck:"",start:"07:00",stops:[blankStop()]});
 const clone = o => JSON.parse(JSON.stringify(o));
 
-let state = { date:"", today:"", crews:[], jobs:[], roster:[], history:{} };
+let state = { date:"", today:"", crews:[], jobs:[], roster:[], alerts:{on:true,emails:[]}, history:{} };
 
 /* ---------- Talking to the Google Sheet ---------- */
 /* Talks to the Google Sheet through the script's web address. No Google sign-in needed. */
@@ -257,9 +265,9 @@ let setTimer=null, lastSentSettings="";
 function queueSettingsSave(){
   clearTimeout(setTimer);
   setTimer=setTimeout(async ()=>{
-    const body=JSON.stringify([state.jobs,state.roster]);
+    const body=JSON.stringify([state.jobs,state.roster,state.alerts]);
     if(body===lastSentSettings) return;
-    try{ await call("apiSaveSettings", BOOT.k, state.jobs, state.roster); lastSentSettings=body; }
+    try{ await call("apiSaveSettings", BOOT.k, state.jobs, state.roster, state.alerts); lastSentSettings=body; }
     catch(e){ setSave("Saved jobs not saved. Check your internet.", true); setTimeout(queueSettingsSave, 8000); }
   }, 900);
 }
@@ -517,6 +525,8 @@ function renderLists(){
     <div class="lib-row"><span><strong>${esc(j.job)}</strong><br><span class="hint">${esc(j.address)} · ${esc(j.gc)} ${esc(j.gcPhone)}${j.bidHours?` · Bid ${esc(j.bidHours)} hrs`:""}</span></span>
     <button class="small danger" data-del="${j.id}">Remove</button></div>`).join("") : `<p class="hint">No saved jobs yet. Click "Pull jobs now" to bring them in from the Job Tracker.</p>`;
   document.getElementById("roster").value = state.roster.join("\n");
+  document.getElementById("alertOn").checked = state.alerts.on !== false;
+  document.getElementById("alertEmails").value = (state.alerts.emails||[]).join("\n");
 }
 document.getElementById("jobList").addEventListener("click",e=>{
   const id=e.target.dataset.del; if(!id) return;
@@ -524,6 +534,23 @@ document.getElementById("jobList").addEventListener("click",e=>{
   state.jobs=state.jobs.filter(j=>j.id!==id); queueSettingsSave(); renderLists();
 });
 document.getElementById("roster").addEventListener("input",e=>{ state.roster=lines(e.target.value); queueSettingsSave(); renderPeople(); });
+/* ---------- End-of-day reminder settings ---------- */
+const emailList = v => String(v||"").split(/[\s,;]+/).map(x=>x.trim()).filter(x=>/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(x));
+document.getElementById("alertOn").addEventListener("change",e=>{ state.alerts.on=e.target.checked; queueSettingsSave(); });
+document.getElementById("alertEmails").addEventListener("input",e=>{ state.alerts.emails=emailList(e.target.value); queueSettingsSave(); });
+document.getElementById("alertTest").onclick=async ()=>{
+  const btn=document.getElementById("alertTest"), msg=document.getElementById("alertMsg");
+  btn.disabled=true; msg.textContent="Sending…";
+  try{
+    clearTimeout(setTimer); await call("apiSaveSettings", BOOT.k, state.jobs, state.roster, state.alerts);
+    lastSentSettings=JSON.stringify([state.jobs,state.roster,state.alerts]);
+    await flushDay();
+    const r=await call("apiTestAlert", BOOT.k, state.date);
+    msg.textContent=`Test sent to ${r.to.join(", ")}. It lists ${r.count} unfinished task${r.count===1?"":"s"} for ${shortDay(state.date)}. Check spam if it doesn't show up.`;
+  }catch(e){ msg.textContent="Didn't send. " + (e&&e.message?e.message:""); }
+  finally{ btn.disabled=false; }
+};
+
 function renderPeople(){ document.getElementById("peopleList").innerHTML=state.roster.map(p=>`<option value="${esc(p)}">`).join(""); }
 
 /* ---------- Job Tracker pull ---------- */
@@ -697,7 +724,8 @@ applyTip();
   try{
     const d=await call("apiInit", BOOT.k);
     state.jobs=d.jobs||[]; state.roster=d.roster||[]; state.history=d.history||{};
-    lastSentSettings=JSON.stringify([state.jobs,state.roster]);
+    state.alerts=d.alerts||{on:true,emails:[]};
+    lastSentSettings=JSON.stringify([state.jobs,state.roster,state.alerts]);
     state.today=d.today; state.date=d.today; pd.value=d.today;
     state.crews=crewsFor(d.today);
     if(state.history[d.today]) lastSentDay=JSON.stringify(state.history[d.today]);
