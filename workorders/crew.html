@@ -72,6 +72,35 @@ button.btn.ghost{background:var(--panel);color:var(--fg);border-color:var(--line
 .who-task{margin:0;color:var(--muted);font-size:.95rem}
 .who-names{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px}
 .who-names .btn{padding:14px 12px;font-size:1.05rem}
+.t-sub .op{color:var(--fg)}
+.plans{display:flex;flex-wrap:wrap;gap:8px}
+.plans .btn{display:inline-flex;gap:6px;align-items:center}
+.pv{position:fixed;inset:0;z-index:40;background:#2a3332;display:grid;grid-template-rows:auto minmax(0,1fr) auto;color:#fff}
+.pv-h{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 14px;padding-top:max(10px,env(safe-area-inset-top,0px));background:#14201f}
+.pv-h h3{margin:0;font-family:var(--display);font-stretch:88%;font-size:1.1rem;line-height:1.2}
+.pv-x{font:inherit;font-weight:700;font-size:1rem;background:#fff;color:#14201f;border:none;border-radius:8px;padding:10px 16px;flex:none}
+.pv-view{position:relative;overflow:hidden;touch-action:none}
+.pv-stage{position:absolute;left:0;top:0;transform-origin:0 0;background:#fff}
+.pv-stage.anim{transition:transform .35s ease}
+.pv-stage img{display:block;width:100%;height:100%;pointer-events:none;user-select:none;-webkit-user-select:none}
+.pk{position:absolute;border:calc(3px * var(--inv,1)) solid #e8590c;background:rgba(232,89,12,.18);transition:opacity .2s}
+.pk span{position:absolute;left:calc(-3px * var(--inv,1));bottom:100%;background:#e8590c;color:#fff;font-weight:700;font-size:calc(13px * var(--inv,1));line-height:1.3;padding:0 calc(5px * var(--inv,1));white-space:nowrap}
+.pk.done{border-color:#2f7a3a;background:rgba(47,122,58,.22)}
+.pk.done span{background:#2f7a3a}
+.pk.dim{opacity:.2}
+.pk.hot{box-shadow:0 0 0 calc(5px * var(--inv,1)) rgba(255,214,10,.95)}
+.pv-msg{position:absolute;inset:0;display:grid;place-items:center;color:#cfd8d8;padding:20px;text-align:center}
+.pv-zoom{position:absolute;right:12px;bottom:12px;display:grid;gap:8px}
+.pv-zoom button{width:48px;height:48px;border-radius:50%;border:1px solid #cfd8d8;box-shadow:0 2px 8px rgba(0,0,0,.35);background:rgba(255,255,255,.94);color:#14201f;font-size:1.5rem;font-weight:700;line-height:1}
+.pv-f{background:#14201f;padding:10px 12px;padding-bottom:max(10px,env(safe-area-inset-bottom,0px));display:grid;gap:8px}
+.pv-legend{display:flex;gap:16px;font-size:.85rem;color:#cfd8d8;align-items:center;flex-wrap:wrap}
+.sw{display:inline-block;width:13px;height:13px;border:2px solid #e8590c;background:rgba(232,89,12,.35);margin-right:6px;vertical-align:-2px}
+.sw.d{border-color:#5fb56c;background:rgba(95,181,108,.4)}
+.pv-tasks{display:flex;gap:8px;overflow-x:auto;padding-bottom:2px}
+.pv-tasks button{flex:none;font:inherit;font-size:.92rem;font-weight:600;border-radius:99px;padding:9px 14px;border:1px solid #56615f;background:#22302f;color:#fff;max-width:78vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pv-tasks button.on{background:#fff;color:#14201f;border-color:#fff}
+.pv-tasks button.dn::before{content:"✓ ";color:#7fcf8a}
+.pv-tasks button.on.dn::before{color:#2f7a3a}
 </style>
 </head><body>
 <div class="wrap">
@@ -93,6 +122,12 @@ button.btn.ghost{background:var(--panel);color:var(--fg);border-color:var(--line
   <p class="tip" id="tip" hidden>Tip: save this page to your home screen. iPhone: tap Share, then Add to Home Screen. Android: tap the three dots, then Add to Home screen. It opens today's work every time.</p>
 </div>
 <input type="file" id="cam" accept="image/*" capture="environment" hidden>
+<div class="pv" id="pv" hidden role="dialog" aria-modal="true" aria-labelledby="pvTitle">
+  <div class="pv-h"><h3 id="pvTitle"></h3><button class="pv-x" id="pvClose">Close</button></div>
+  <div class="pv-view" id="pvView"><div class="pv-stage" id="pvStage"></div><div class="pv-msg" id="pvMsg"></div>
+    <div class="pv-zoom"><button id="pvIn" aria-label="Zoom in">+</button><button id="pvOut" aria-label="Zoom out">−</button></div></div>
+  <div class="pv-f"><div class="pv-legend"><span><span class="sw"></span>To do</span><span><span class="sw d"></span>Done</span><span>Pinch to zoom. Tap a task to find its openings.</span></div><div class="pv-tasks" id="pvTasks"></div></div>
+</div>
 <div class="who-bg" id="whoBg" hidden>
   <div class="who-sheet" role="dialog" aria-modal="true" aria-labelledby="whoTitle">
     <h3 id="whoTitle">Who finished it?</h3>
@@ -160,7 +195,8 @@ function render(){
           ${maps?`<a class="pill" href="${maps}" target="_blank" rel="noopener">Open in Maps</a>`:""}
           ${s.gcPhone?`<a class="pill" href="tel:${esc(telOf(s.gcPhone))}">Call ${esc(s.gcPhone)}</a>`:""}
         </div></div>`:""}
-      ${tasks.length?`<div class="tasks">${tasks.map(t=>taskHtml(t)).join("")}</div>`:""}
+      ${(s.plans||[]).length?`<div class="plans">${s.plans.map(p=>`<button class="btn" data-plan="${esc(p.id)}" data-stop="${esc(s.id)}">${s.plans.length>1?"Plan: "+esc(planTitle(p)):"View plan"}<span style="font-weight:500;opacity:.85">(${(p.marks||[]).length} opening${(p.marks||[]).length===1?"":"s"})</span></button>`).join("")}</div>`:""}
+      ${tasks.length?`<div class="tasks">${tasks.map(t=>taskHtml(t,s)).join("")}</div>`:""}
       ${s.materials||s.notes?`<div class="extra">${s.materials?`<div><span class="k">Load</span>${esc(s.materials)}</div>`:""}${s.notes?`<div><span class="k">Notes</span>${esc(s.notes)}</div>`:""}</div>`:""}
       <div class="note">
         <label for="note-${s.id}">Note to David (problem, missing material, can't finish)</label>
@@ -169,9 +205,10 @@ function render(){
       </div>
     </section>`;}).join("") : `<div class="center">Nothing is planned for your crew yet. Check with David.</div>`;
 }
-function taskHtml(t){
+function taskHtml(t,s){
   const sub=[`<span class="who">${esc(t.who)}</span>`];
   if(t.goal) sub.push(`<span class="goal">Goal: ${esc(t.goal)}</span>`);
+  const ops=openingsOf(s,t); if(ops.length) sub.push(`<span class="op">Openings: ${esc(ops.join(", "))}</span>`);
   if(t.carried && t.carried.days>1 && !t.doneAt) sub.push(`<span class="carried">Day ${t.carried.days}, carried over</span>`);
   if(t.doneAt) sub.push(`<span class="ok">Done ${esc(clockOf(t.doneAt))}${t.doneBy?" by "+esc(t.doneBy):""}${t.photo?" with photo":""}</span>`);
   else if(t.photoReq) sub.push(`<span class="ph">Photo needed to finish</span>`);
@@ -185,6 +222,8 @@ document.getElementById("stops").addEventListener("input", e=>{ const id=e.targe
 function findTask(id){ for(const s of crew.stops) for(const t of s.tasks) if(t.id===id) return t; return null; }
 
 document.getElementById("stops").addEventListener("click", async e=>{
+  const pb=e.target.closest("button[data-plan]");
+  if(pb){ openPlan(pb.dataset.stop, pb.dataset.plan); return; }
   const nb=e.target.closest("button[data-note]");
   if(nb){ sendNote(nb.dataset.note, nb); return; }
   const b=e.target.closest("button[data-task]"); if(!b || b.classList.contains("busy")) return;
@@ -254,6 +293,99 @@ async function sendNote(stopId, btn){
   try{ crew = await call("apiNote", BOOT.c, stopId, text); delete drafts[stopId]; render(); }
   catch(e){ btn.disabled=false; btn.textContent="Send note"; showErr(errText(e)); }
 }
+/* ---------- Plan viewer: the blueprint page with the openings David highlighted ---------- */
+const planImgs={}, pvEl=document.getElementById("pv"), pvView=document.getElementById("pvView"), pvStage=document.getElementById("pvStage"), pvMsg=document.getElementById("pvMsg");
+let pv=null;
+const planTitle = p => p.sheet || ((p.name||"Plan") + (p.pages>1 ? ", page "+p.page : ""));
+const openingsOf = (s,t) => (s.plans||[]).flatMap(p=>(p.marks||[]).filter(m=>m.task===t.id).map(m=>m.label||"Opening"));
+async function openPlan(stopId, planId){
+  const s=crew.stops.find(x=>x.id===stopId), p=s&&(s.plans||[]).find(x=>x.id===planId); if(!p) return;
+  pv={s,p,sel:"",x:0,y:0,k:1,fit:1};
+  document.getElementById("pvTitle").textContent=(s.job||"Plan")+" · "+planTitle(p);
+  pvStage.innerHTML=""; pvStage.hidden=true; pvMsg.textContent="Loading the plan…"; pvMsg.hidden=false;
+  pvEl.hidden=false; document.body.style.overflow="hidden";
+  try{ history.pushState({pv:1},""); }catch(e){}
+  paintPlanTasks();
+  try{
+    const src=planImgs[p.id] || (planImgs[p.id]=await call("apiCrewPlan", BOOT.c, p.id));
+    if(!pv||pv.p!==p) return;
+    pvStage.style.width=p.w+"px"; pvStage.style.height=p.h+"px";
+    pvStage.innerHTML=`<img alt="Plan" src="${src}"><div id="pvMarks"></div>`;
+    pvStage.hidden=false; pvMsg.hidden=true;
+    paintPlanMarks(); fitPlan();
+  }catch(e){ if(pv&&pv.p===p) pvMsg.textContent=errText(e); }
+}
+function closePlan(){ if(!pv) return; pv=null; pvEl.hidden=true; document.body.style.overflow=""; }
+document.getElementById("pvClose").onclick=()=>{ if(history.state&&history.state.pv){ history.back(); } else closePlan(); };
+window.addEventListener("popstate", closePlan);
+function doneIds(){ const d={}; pv.s.tasks.forEach(t=>{ if(t.doneAt) d[t.id]=1; }); return d; }
+function paintPlanMarks(){
+  const box=document.getElementById("pvMarks"); if(!box||!pv) return; const d=doneIds();
+  box.innerHTML=(pv.p.marks||[]).map(m=>`<div class="pk ${m.task&&d[m.task]?"done":""} ${pv.sel?(m.task===pv.sel?"hot":"dim"):""}" style="left:${m.x*100}%;top:${m.y*100}%;width:${m.w*100}%;height:${m.h*100}%"><span>${esc(m.label)}</span></div>`).join("");
+}
+function paintPlanTasks(){
+  const ids=new Set((pv.p.marks||[]).map(m=>m.task).filter(Boolean));
+  const tasks=pv.s.tasks.filter(t=>t.text.trim() && ids.has(t.id));
+  document.getElementById("pvTasks").innerHTML=`<button data-pt="" class="${pv.sel?"":"on"}">All openings (${(pv.p.marks||[]).length})</button>`+
+    tasks.map(t=>`<button data-pt="${t.id}" class="${pv.sel===t.id?"on":""} ${t.doneAt?"dn":""}">${esc(t.text)}</button>`).join("");
+}
+document.getElementById("pvTasks").addEventListener("click", e=>{
+  const b=e.target.closest("button[data-pt]"); if(!b||!pv) return;
+  pv.sel=b.dataset.pt; paintPlanTasks(); paintPlanMarks();
+  const ms=(pv.p.marks||[]).filter(m=>!pv.sel||m.task===pv.sel);
+  if(!pv.sel||!ms.length) fitPlan(true); else zoomToMarks(ms);
+});
+function applyPlan(anim){
+  if(!pv) return;
+  const vw=pvView.clientWidth, vh=pvView.clientHeight, W=pv.p.w*pv.k, H=pv.p.h*pv.k;
+  pv.x = W<=vw ? (vw-W)/2 : Math.min(0, Math.max(vw-W, pv.x));
+  pv.y = H<=vh ? (vh-H)/2 : Math.min(0, Math.max(vh-H, pv.y));
+  pvStage.classList.toggle("anim", !!anim);
+  pvStage.style.transform=`translate(${pv.x}px,${pv.y}px) scale(${pv.k})`;
+  pvStage.style.setProperty("--inv", String(1/pv.k));
+  if(anim) setTimeout(()=>pvStage.classList.remove("anim"), 400);
+}
+const clampK = k => Math.min(Math.max(k, pv.fit), Math.max(pv.fit*2, 2));
+function fitPlan(anim){ if(!pv) return; pv.fit=Math.min(pvView.clientWidth/pv.p.w, pvView.clientHeight/pv.p.h); pv.k=pv.fit; applyPlan(anim); }
+function zoomAt(k, cx, cy, anim){ const sx=(cx-pv.x)/pv.k, sy=(cy-pv.y)/pv.k; pv.k=clampK(k); pv.x=cx-sx*pv.k; pv.y=cy-sy*pv.k; applyPlan(anim); }
+function zoomToMarks(ms){
+  const x0=Math.min(...ms.map(m=>m.x)), y0=Math.min(...ms.map(m=>m.y)), x1=Math.max(...ms.map(m=>m.x+m.w)), y1=Math.max(...ms.map(m=>m.y+m.h));
+  const bw=(x1-x0)*pv.p.w, bh=(y1-y0)*pv.p.h, vw=pvView.clientWidth, vh=pvView.clientHeight;
+  pv.k=clampK(Math.min(vw/(bw*2.5+40), vh/(bh*2.5+60)));
+  pv.x=vw/2-(x0*pv.p.w+bw/2)*pv.k; pv.y=vh/2-(y0*pv.p.h+bh/2)*pv.k; applyPlan(true);
+}
+document.getElementById("pvIn").onclick=()=>pv&&zoomAt(pv.k*1.6, pvView.clientWidth/2, pvView.clientHeight/2, true);
+document.getElementById("pvOut").onclick=()=>pv&&zoomAt(pv.k/1.6, pvView.clientWidth/2, pvView.clientHeight/2, true);
+window.addEventListener("resize", ()=>{ if(pv&&!pvStage.hidden){ const wasFit=pv.k<=pv.fit*1.01; pv.fit=Math.min(pvView.clientWidth/pv.p.w, pvView.clientHeight/pv.p.h); if(wasFit) pv.k=pv.fit; pv.k=clampK(pv.k); applyPlan(); } });
+pvView.addEventListener("wheel", e=>{ if(!pv) return; e.preventDefault(); const r=pvView.getBoundingClientRect(); zoomAt(pv.k*Math.exp(-e.deltaY*0.002), e.clientX-r.left, e.clientY-r.top); }, {passive:false});
+/* One finger drags, two fingers pinch, double tap zooms in or back out. */
+const ptrs=new Map(); let gest=null, lastTap=0;
+function gestStart(){
+  const pts=[...ptrs.values()]; if(!pts.length||!pv){ gest=null; return; }
+  const r=pvView.getBoundingClientRect(), cx=pts.reduce((a,p)=>a+p.x,0)/pts.length-r.left, cy=pts.reduce((a,p)=>a+p.y,0)/pts.length-r.top;
+  const d=pts.length>1?Math.hypot(pts[0].x-pts[1].x,pts[0].y-pts[1].y):0;
+  gest={n:pts.length,cx,cy,d,x:pv.x,y:pv.y,k:pv.k,moved:0};
+}
+pvView.addEventListener("pointerdown", e=>{ if(!pv||e.target.closest(".pv-zoom")) return; pvView.setPointerCapture(e.pointerId); ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY}); gestStart(); });
+pvView.addEventListener("pointermove", e=>{
+  if(!pv||!ptrs.has(e.pointerId)) return; ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY});
+  const pts=[...ptrs.values()]; if(!gest||pts.length!==gest.n){ gestStart(); return; }
+  const r=pvView.getBoundingClientRect(), cx=pts.reduce((a,p)=>a+p.x,0)/pts.length-r.left, cy=pts.reduce((a,p)=>a+p.y,0)/pts.length-r.top;
+  let k=gest.k; if(pts.length>1&&gest.d>0) k=clampK(gest.k*Math.hypot(pts[0].x-pts[1].x,pts[0].y-pts[1].y)/gest.d);
+  const sx=(gest.cx-gest.x)/gest.k, sy=(gest.cy-gest.y)/gest.k;
+  gest.moved=Math.max(gest.moved, Math.hypot(cx-gest.cx, cy-gest.cy));
+  pv.k=k; pv.x=cx-sx*k; pv.y=cy-sy*k; applyPlan();
+});
+function ptrEnd(e){
+  if(!ptrs.has(e.pointerId)) return;
+  const single=ptrs.size===1 && gest && gest.n===1 && gest.moved<8;
+  ptrs.delete(e.pointerId); gestStart();
+  if(single && pv){ const now=Date.now(), r=pvView.getBoundingClientRect();
+    if(now-lastTap<320){ lastTap=0; if(pv.k>pv.fit*1.5) fitPlan(true); else zoomAt(pv.fit*3, e.clientX-r.left, e.clientY-r.top, true); }
+    else lastTap=now; }
+}
+pvView.addEventListener("pointerup", ptrEnd); pvView.addEventListener("pointercancel", ptrEnd);
+
 async function load(){
   try{
     const d=await call("apiCrew", BOOT.c);

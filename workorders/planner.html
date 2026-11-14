@@ -134,6 +134,35 @@ td.goal{width:16%;text-align:right!important;color:#333}
 .top-right{display:grid;gap:4px;justify-items:end}
 #loading{position:fixed;inset:0;display:grid;place-items:center;background:var(--bg);z-index:20;font-size:1rem;color:var(--muted)}
 #loading.err{color:var(--warn);padding:24px;text-align:center}
+/* ---------- Plans (blueprint pages with highlighted openings) ---------- */
+.plan-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.plan-chip{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:6px 8px;font-size:.85rem}
+.modal-bg{position:fixed;inset:0;background:rgba(10,18,18,.6);z-index:40;display:flex;align-items:center;justify-content:center;padding:16px}
+.modal{background:var(--panel);color:var(--fg);border-radius:10px;width:min(1000px,100%);max-height:100%;display:grid;grid-template-rows:auto minmax(0,1fr);overflow:hidden;box-shadow:0 10px 40px rgba(0,0,0,.3)}
+.modal.small-m{width:min(440px,100%)}
+.modal-h{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid var(--line)}
+.modal-h h2{margin:0;font-family:var(--display);font-stretch:85%;font-size:1.15rem;text-transform:uppercase}
+.modal-b{overflow:auto;padding:16px}
+.pages{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:12px}
+.pages button{display:grid;gap:6px;padding:8px;background:var(--field);justify-items:center;font-weight:500}
+.pages canvas{max-width:100%;height:auto;background:#fff;border:1px solid var(--line)}
+.modal.pm{width:min(1500px,100%);height:100%}
+.pm-body{display:grid;grid-template-columns:minmax(0,1fr) 300px;min-height:0}
+.pm-scroll{overflow:auto;background:#56615f;min-height:0;padding:28px 10px 10px}
+.pm-stage{position:relative;margin:0 auto;user-select:none;touch-action:none;cursor:crosshair;background:#fff}
+.pm-stage img{display:block;width:100%;height:100%;pointer-events:none}
+.pm-msg{padding:30px;color:#fff;text-align:center}
+.mk{position:absolute;border:2px solid #e8590c;background:rgba(232,89,12,.16);border-radius:2px;cursor:pointer}
+.mk span{position:absolute;left:-2px;bottom:100%;background:#e8590c;color:#fff;font:600 11px/1.35 var(--body);padding:0 4px;white-space:nowrap;border-radius:2px 2px 0 0}
+.mk.done{border-color:#2f7a3a;background:rgba(47,122,58,.2)}
+.mk.done span{background:#2f7a3a}
+.mk.sel{border-color:#1971c2;background:rgba(25,113,194,.22);box-shadow:0 0 0 2px #fff}
+.mk.sel span{background:#1971c2}
+.pm-side{border-left:1px solid var(--line);overflow:auto;padding:12px;display:grid;gap:10px;align-content:start}
+.mk-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px;padding:8px;border:1px solid var(--line);border-radius:6px}
+.mk-row.sel{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+.mk-row select{grid-column:1/-1}
+@media (max-width:760px){.pm-body{grid-template-columns:1fr;grid-template-rows:minmax(0,1fr) 220px}.pm-side{border-left:none;border-top:1px solid var(--line)}}
 </style>
 </head><body>
 <div id="loading">Loading your work orders…</div>
@@ -157,7 +186,7 @@ td.goal{width:16%;text-align:right!important;color:#333}
   </div>
 
   <section id="plan" style="display:grid;gap:16px">
-    <div class="tip tip-x" id="planTip"><span>One card per crew. Add a stop for each jobsite they hit today, in driving order. Give every task a person and a goal like "by lunch" or "6 openings." Anything not finished rolls to the top of that crew's next planned day on its own, with a red day count. Click its X if it's no longer needed. Each crew lead has one permanent link: click "Copy crew link" and send it to him once, by text, email or Phone Link. It always opens that day's plan. Checkmarks show up here as the crew taps tasks done. Everything saves to the CGC Work Orders Google Sheet.</span><button class="x" id="hideTip" aria-label="Hide tips" title="Hide tips">✕</button></div>
+    <div class="tip tip-x" id="planTip"><span>One card per crew. Add a stop for each jobsite they hit today, in driving order. Give every task a person and a goal like "by lunch" or "6 openings." Anything not finished rolls to the top of that crew's next planned day on its own, with a red day count. Click its X if it's no longer needed. Each crew lead has one permanent link: click "Copy crew link" and send it to him once, by text, email or Phone Link. It always opens that day's plan. Add a plan PDF to a stop to highlight the openings for the crew. Checkmarks show up here as the crew taps tasks done. Everything saves to the CGC Work Orders Google Sheet.</span><button class="x" id="hideTip" aria-label="Hide tips" title="Hide tips">✕</button></div>
     <div class="tip-show" id="showTipRow" hidden><button class="linkish" id="showTip">Show tips</button></div>
     <div id="cards" style="display:grid;gap:16px"></div>
     <div class="bar">
@@ -211,6 +240,7 @@ td.goal{width:16%;text-align:right!important;color:#333}
 </div>
 
 <datalist id="peopleList"></datalist>
+<input type="file" id="planFile" accept="application/pdf,.pdf,image/*" hidden>
 
 <script>
 const Q = new URLSearchParams(location.search);
@@ -366,6 +396,7 @@ function renderStop(c,s,k){
       </div>
       <div><button class="small" data-act="addtask">+ Add task</button></div>
     </div>
+    ${planRowHtml(s)}
     <div class="grid two">
       <label for="materials-${s.id}">Load for this stop<textarea id="materials-${s.id}" data-sf="materials" rows="2">${esc(s.materials)}</textarea></label>
       <label for="notes-${s.id}">Notes for this stop<textarea id="notes-${s.id}" data-sf="notes" rows="2">${esc(s.notes)}</textarea></label>
@@ -427,7 +458,9 @@ cards.addEventListener("change", e=>{
   const {c,s}=ctx(e.target); if(!c) return;
   if(e.target.dataset.f==="lead"||e.target.dataset.f==="members"){ refreshNames(c); return; }
   if(e.target.dataset.act==="pick"&&s){ const j=state.jobs.find(x=>x.id===e.target.value); if(!j) return;
-    Object.assign(s,{job:j.job,address:j.address,gc:j.gc,gcPhone:j.gcPhone,bidHours:j.bidHours||""}); save(); rerenderCard(c); }
+    Object.assign(s,{job:j.job,address:j.address,gc:j.gc,gcPhone:j.gcPhone,bidHours:j.bidHours||""});
+    if(j.plans&&j.plans.length&&!(s.plans&&s.plans.length)) s.plans=clone(j.plans);
+    save(); rerenderCard(c); }
 });
 /* Update the "who" dropdowns in place so the box David just clicked into keeps its focus. */
 function refreshNames(c){
@@ -457,13 +490,17 @@ cards.addEventListener("click", e=>{
   const btn=e.target.closest("button[data-act]"); if(!btn) return;
   const {c,s,t}=ctx(btn); if(!c) return; const a=btn.dataset.act;
   if(a==="copylink"){ copyLink(c,btn); return; }
-  if(a==="dup"){ const copy=clone(c); copy.id=uid(); copy.token=token(); copy.lead=""; copy.members=""; copy.stops.forEach(x=>{x.id=uid();x.crewNote="";x.crewNoteAt="";x.tasks.forEach(y=>{y.id=uid();y.who=ALL;y.doneAt="";y.photo="";y.doneBy="";delete y.carried;});}); state.crews.splice(state.crews.indexOf(c)+1,0,copy); save(); renderCards(); return; }
+  if(a==="dup"){ const copy=clone(c); copy.id=uid(); copy.token=token(); copy.lead=""; copy.members=""; copy.stops.forEach(x=>{const map={}; x.id=uid();x.crewNote="";x.crewNoteAt="";x.tasks.forEach(y=>{const n=uid(); map[y.id]=n; y.id=n;y.who=ALL;y.doneAt="";y.photo="";y.doneBy="";delete y.carried;}); (x.plans||[]).forEach(p=>(p.marks||[]).forEach(m=>{ m.task=map[m.task]||""; }));}); state.crews.splice(state.crews.indexOf(c)+1,0,copy); save(); renderCards(); return; }
   if(a==="del"){ if(!arm(btn,"Remove crew")) return; state.crews=state.crews.filter(x=>x!==c); save(); renderCards(); return; }
   if(a==="addstop"){ c.stops.push(blankStop()); save(); rerenderCard(c); return; }
   if(!s) return;
   if(a==="delstop"){ if(!arm(btn,"Remove stop")) return; s.tasks.forEach(x=>dismissCarry(c,x)); c.stops=c.stops.filter(x=>x!==s); save(); rerenderCard(c); return; }
   if(a==="up"||a==="down"){ const i=c.stops.indexOf(s), j=a==="up"?i-1:i+1; if(j<0||j>=c.stops.length) return; [c.stops[i],c.stops[j]]=[c.stops[j],c.stops[i]]; save(); rerenderCard(c); return; }
   if(a==="addtask"){ s.tasks.push(task()); save(); rerenderCard(c); const last=s.tasks[s.tasks.length-1]; document.getElementById("t-"+last.id)?.focus(); return; }
+  if(a==="addplan"){ addPlan(c,s); return; }
+  if(a==="markplan"||a==="delplan"){ const pid=btn.closest("[data-plan]").dataset.plan, p=(s.plans||[]).find(x=>x.id===pid); if(!p) return;
+    if(a==="markplan"){ openMarker(c,s,p); return; }
+    if(!arm(btn,"Remove")) return; s.plans=s.plans.filter(x=>x!==p); save(); rerenderCard(c); rememberJobPlans(s); return; }
   if(a==="deltask"&&t){ dismissCarry(c,t); s.tasks=s.tasks.filter(x=>x!==t); save(); rerenderCard(c); return; }
   if(a==="savejob"){
     if(!s.job.trim()){ btn.textContent="Add a job name first"; setTimeout(()=>btn.textContent="Save job to list",2000); return; }
@@ -471,7 +508,7 @@ cards.addEventListener("click", e=>{
     const rec={job:s.job.trim(),address:s.address,gc:s.gc,gcPhone:s.gcPhone};
     if(ex) Object.assign(ex,rec); else state.jobs.push({id:uid(),...rec});
     state.jobs.sort((a,b)=>a.job.localeCompare(b.job));
-    queueSettingsSave(); btn.textContent=ex?"Job updated":"Job saved"; setTimeout(()=>rerenderCard(c),900);
+    rememberJobPlans(s); queueSettingsSave(); btn.textContent=ex?"Job updated":"Job saved"; setTimeout(()=>rerenderCard(c),900);
   }
 });
 document.getElementById("addSheet").onclick=()=>{ state.crews.push(blankCrew()); save(); renderCards(); };
@@ -496,7 +533,7 @@ function renderSheets(){
       return `<div class="sh-stop">
         <div class="sh-h"><span>Stop ${k+1} of ${c.stops.length}${s.job?": "+esc(s.job):""}</span><span>${s.arrive?"Arrive "+esc(fmtTime(s.arrive)):""}</span></div>
         ${s.address||contact?`<div class="sh-meta">${s.address?`<span>${esc(s.address)}</span>`:""}${contact?`<span>Contact: ${contact}</span>`:""}</div>`:""}
-        ${tasks.length?`<table class="tasks"><tbody>${tasks.map(t=>`<tr><td class="c"><span class="box"></span></td><td class="who-cell">${esc(t.who)}</td><td>${esc(t.text)}</td><td class="goal">${esc(t.goal||"")}${t.carried&&t.carried.days>1?`<br><span style="font-size:8.5pt">Carried, day ${t.carried.days}</span>`:""}</td></tr>`).join("")}</tbody></table>`:""}
+        ${tasks.length?`<table class="tasks"><tbody>${tasks.map(t=>`<tr><td class="c"><span class="box"></span></td><td class="who-cell">${esc(t.who)}</td><td>${esc(t.text)}${openingsOf(s,t).length?`<br><span style="font-size:9pt;color:#333">Openings: ${esc(openingsOf(s,t).join(", "))}</span>`:""}</td><td class="goal">${esc(t.goal||"")}${t.carried&&t.carried.days>1?`<br><span style="font-size:8.5pt">Carried, day ${t.carried.days}</span>`:""}</td></tr>`).join("")}</tbody></table>`:""}
         ${s.materials||s.notes?`<div class="sh-extra">
           ${s.materials?`<div><span class="sh-k">Load</span><span class="sh-text">${esc(s.materials)}</span></div>`:""}
           ${s.notes?`<div><span class="sh-k">Notes</span><span class="sh-text">${esc(s.notes)}</span></div>`:""}
@@ -614,7 +651,7 @@ async function refreshPrev(iso){
   try{ const fresh=await call("apiGetDay", BOOT.k, p); if(fresh) state.history[p]=fresh; }catch(e){}
 }
 function dismissCarry(c,t){ if(t && t.carried && t.carried.src){ c.dismissed=c.dismissed||[]; if(!c.dismissed.includes(t.carried.src)) c.dismissed.push(t.carried.src); } }
-const isBlankStop = s => !s.job.trim() && !s.address.trim() && !s.tasks.some(t=>t.text.trim()) && !String(s.materials||"").trim() && !String(s.notes||"").trim();
+const isBlankStop = s => !s.job.trim() && !s.address.trim() && !s.tasks.some(t=>t.text.trim()) && !String(s.materials||"").trim() && !String(s.notes||"").trim() && !(s.plans&&s.plans.length);
 function carryInto(iso, crews){
   if(!state.today || iso < state.today) return false;
   const p=prevPlanned(iso); if(!p || p > state.today) return false;
@@ -639,11 +676,13 @@ function carryInto(iso, crews){
       const job=String(ss.job||"").trim().toLowerCase();
       let target=job ? c.stops.find(x=>x.job.trim().toLowerCase()===job) || newStops.find(x=>x.job.trim().toLowerCase()===job) : null;
       if(!target){
-        target={id:uid(),arrive:"",job:ss.job||"",address:ss.address||"",gc:ss.gc||"",gcPhone:ss.gcPhone||"",bidHours:ss.bidHours||"",materials:"",notes:"",tasks:[],carriedStop:true};
+        target={id:uid(),arrive:"",job:ss.job||"",address:ss.address||"",gc:ss.gc||"",gcPhone:ss.gcPhone||"",bidHours:ss.bidHours||"",materials:"",notes:"",tasks:[],plans:[],carriedStop:true};
         newStops.push(target);
       }
       const copies=left.map(t=>({id:uid(),text:t.text,who:t.who,goal:t.goal||"",photoReq:!!t.photoReq,
         carried:{src:t.id, first:(t.carried&&t.carried.first)||p, days:((t.carried&&t.carried.days)||1)+1}}));
+      const idMap={}; left.forEach((t,i)=>idMap[t.id]=copies[i].id);
+      mergePlans(target, ss.plans, idMap);
       const firstOwn=target.tasks.findIndex(t=>!t.carried);
       if(firstOwn<0) target.tasks.push(...copies); else target.tasks.splice(firstOwn,0,...copies);
       changed=true;
@@ -710,6 +749,220 @@ function renderHistory(){
   </tbody></table>`;
 }
 document.getElementById("histJob").onchange=renderHistory;
+
+/* ---------- Plans: blueprint pages with highlighted openings ----------
+   David adds a PDF page (or a picture) to a stop. The page is turned into one image here on his computer,
+   saved to the "CGC Work Order Plans" Drive folder, and he drags boxes over the openings.
+   Each box has a label and can be linked to one task. The crew sees the boxes on their phone. */
+const PDFJS = ["https:","","cdnjs.cloudflare.com","ajax","libs","pdf.js","3.11.174",""].join("/");
+const PLAN_MAX = 3600;
+const planCache = {};
+let pdfLoading = null, planFor = null, pm = null;
+const planTitle = p => p.sheet || ((p.name||"Plan") + (p.pages>1 ? ", page "+p.page : ""));
+const openingsOf = (s,t) => (s.plans||[]).flatMap(p=>(p.marks||[]).filter(m=>m.task===t.id).map(m=>m.label||"Opening"));
+const r4 = n => Math.round(n*10000)/10000;
+
+function loadPdfJs(){
+  if(window.pdfjsLib) return Promise.resolve(window.pdfjsLib);
+  if(pdfLoading) return pdfLoading;
+  pdfLoading = new Promise((res,rej)=>{
+    const sc=document.createElement("script"); sc.src=PDFJS+"pdf.min.js";
+    sc.onload=()=>{ window.pdfjsLib.GlobalWorkerOptions.workerSrc=PDFJS+"pdf.worker.min.js"; res(window.pdfjsLib); };
+    sc.onerror=()=>{ pdfLoading=null; rej(new Error("Couldn't load the PDF reader. Check your internet and try again.")); };
+    document.head.appendChild(sc);
+  });
+  return pdfLoading;
+}
+function openModal(inner, cls){
+  closeModal();
+  const bg=document.createElement("div"); bg.className="modal-bg"; bg.id="modalBg";
+  bg.innerHTML=`<div class="modal ${cls||""}" role="dialog" aria-modal="true">${inner}</div>`;
+  document.body.appendChild(bg);
+  bg.querySelectorAll("[data-close]").forEach(b=>b.onclick=closeMarker);
+  return bg;
+}
+function closeModal(){ const m=document.getElementById("modalBg"); if(m) m.remove(); }
+function busy(msg){ openModal(`<div class="modal-b" style="padding:28px;text-align:center">${esc(msg)}</div>`, "small-m"); }
+function modalMsg(msg){ openModal(`<div class="modal-b" style="display:grid;gap:14px;padding:22px"><div>${esc(msg)}</div><div><button class="primary" data-close>OK</button></div></div>`, "small-m"); }
+function whiteCanvas(w,h){ const cv=document.createElement("canvas"); cv.width=w; cv.height=h; const g=cv.getContext("2d"); g.fillStyle="#fff"; g.fillRect(0,0,w,h); return cv; }
+/* Line drawings are smaller as PNG, scanned sheets as JPEG: keep whichever is smaller. */
+function encodeCanvas(cv){ const png=cv.toDataURL("image/png"), jpg=cv.toDataURL("image/jpeg",0.85); return png.length<=jpg.length?png:jpg; }
+
+const planFile=document.getElementById("planFile");
+function addPlan(c,s){ planFor={c,s}; planFile.value=""; planFile.click(); }
+planFile.addEventListener("change", async ()=>{
+  const f=planFile.files&&planFile.files[0], tgt=planFor; planFor=null;
+  if(!f||!tgt) return;
+  try{
+    if(/pdf/i.test(f.type)||/\.pdf$/i.test(f.name)) await pickPdfPage(f,tgt);
+    else { busy("Reading the picture…"); await savePlanPage(tgt, await imageToCanvas(f), f.name, 1, 1, ""); }
+  }catch(e){ modalMsg((e&&e.message)||"That file couldn't be read."); }
+});
+function imageToCanvas(f){
+  return new Promise((res,rej)=>{
+    const img=new Image(), url=URL.createObjectURL(f);
+    img.onload=()=>{ const r=Math.min(1, PLAN_MAX/Math.max(img.width,img.height)); const cv=whiteCanvas(Math.round(img.width*r),Math.round(img.height*r));
+      cv.getContext("2d").drawImage(img,0,0,cv.width,cv.height); URL.revokeObjectURL(url); res(cv); };
+    img.onerror=()=>{ URL.revokeObjectURL(url); rej(new Error("That file isn't a PDF or a picture this page can read.")); };
+    img.src=url;
+  });
+}
+async function pickPdfPage(f,tgt){
+  busy("Opening the PDF…");
+  const lib=await loadPdfJs();
+  const doc=await lib.getDocument({data:new Uint8Array(await f.arrayBuffer())}).promise;
+  let labels=null; try{ labels=await doc.getPageLabels(); }catch(e){}
+  const sheet = n => labels && labels[n-1] && labels[n-1]!==String(n) ? labels[n-1] : "";
+  if(doc.numPages===1) return renderPdfPage(doc,1,f.name,tgt,sheet(1));
+  const bg=openModal(`<div class="modal-h"><h2>Pick the page with the openings</h2><button class="x" data-close aria-label="Cancel">✕</button></div>
+    <div class="modal-b"><p class="hint" style="margin:0 0 12px;font-size:.9rem">${esc(f.name)} has ${doc.numPages} pages. Click one. To add another page, click "+ Add plan page" again after.</p><div class="pages" id="pages"></div></div>`);
+  const box=bg.querySelector("#pages");
+  box.addEventListener("click", e=>{ const b=e.target.closest("button[data-page]"); if(!b) return; const n=+b.dataset.page;
+    renderPdfPage(doc,n,f.name,tgt,sheet(n)).catch(err=>modalMsg((err&&err.message)||"That page couldn't be read.")); });
+  for(let i=1;i<=doc.numPages;i++){
+    if(!document.body.contains(bg)) return;
+    const b=document.createElement("button"); b.dataset.page=i; b.innerHTML=`<canvas></canvas><span>Page ${i}${sheet(i)?" · "+esc(sheet(i)):""}</span>`; box.appendChild(b);
+    try{ const pg=await doc.getPage(i), v=pg.getViewport({scale:1}), vp=pg.getViewport({scale:200/Math.max(v.width,v.height)});
+      const cv=b.querySelector("canvas"); cv.width=Math.ceil(vp.width); cv.height=Math.ceil(vp.height);
+      await pg.render({canvasContext:cv.getContext("2d"),viewport:vp,background:"#fff"}).promise; }catch(e){}
+  }
+}
+async function renderPdfPage(doc,n,name,tgt,sheet){
+  busy("Getting page "+n+" ready…");
+  const pg=await doc.getPage(n), v=pg.getViewport({scale:1});
+  const vp=pg.getViewport({scale:Math.min(PLAN_MAX/Math.max(v.width,v.height), 8)});
+  const cv=whiteCanvas(Math.round(vp.width),Math.round(vp.height));
+  await pg.render({canvasContext:cv.getContext("2d"),viewport:vp,background:"#fff"}).promise;
+  await savePlanPage(tgt,cv,name,n,doc.numPages,sheet);
+}
+async function savePlanPage(tgt,cv,fileName,page,pages,sheet){
+  busy("Saving the plan page…");
+  const data=encodeCanvas(cv), base=String(fileName||"Plan").replace(/\.[A-Za-z0-9]+$/,"");
+  const r=await call("apiPlanUpload", BOOT.k, data, [tgt.s.job.trim(), base, pages>1?"page "+page:""].filter(Boolean).join(" - "));
+  planCache[r.id]=data;
+  const plan={id:r.id,name:base,page,pages,sheet:sheet||"",w:cv.width,h:cv.height,marks:[]};
+  tgt.s.plans=(tgt.s.plans||[]).concat(plan);
+  save(); rerenderCard(tgt.c); rememberJobPlans(tgt.s);
+  openMarker(tgt.c,tgt.s,plan);
+}
+/* The saved job keeps its plans (without task links), so picking that job on another day brings them along. */
+function rememberJobPlans(s){
+  const job=state.jobs.find(j=>j.job.toLowerCase()===String(s.job||"").trim().toLowerCase()); if(!job) return;
+  job.plans=(s.plans||[]).map(p=>({...clone(p), marks:(p.marks||[]).map(m=>({...m,task:""}))}));
+  queueSettingsSave();
+}
+/* Copy plans onto another stop, pointing the boxes at the new copies of the tasks (idMap: old task id to new). */
+function mergePlans(target, srcPlans, idMap){
+  target.plans=target.plans||[];
+  (srcPlans||[]).forEach(sp=>{
+    const tp=target.plans.find(p=>p.id===sp.id);
+    if(!tp){ const cp=clone(sp); cp.marks=(cp.marks||[]).map(m=>({...m,task:idMap[m.task]||""})); target.plans.push(cp); return; }
+    (sp.marks||[]).forEach(sm=>{ const tm=(tp.marks||[]).find(m=>m.id===sm.id); if(tm && !tm.task && idMap[sm.task]) tm.task=idMap[sm.task]; });
+  });
+}
+function planRowHtml(s){
+  const ps=s.plans||[];
+  return `<div class="plan-row">${ps.map(p=>{ const n=(p.marks||[]).length, linked=(p.marks||[]).filter(m=>m.task).length;
+    return `<span class="plan-chip" data-plan="${esc(p.id)}"><b>Plan: ${esc(planTitle(p))}</b><span class="hint">${n} opening${n===1?"":"s"} marked${n?`, ${linked} linked to tasks`:""}</span><button class="small" data-act="markplan">Mark openings</button><button class="small danger" data-act="delplan">Remove</button></span>`; }).join("")}
+    <button class="small" data-act="addplan">+ Add plan ${ps.length?"page":"(PDF)"}</button>${ps.length?"":`<span class="hint">Upload the blueprint and highlight the openings so the crew can see them.</span>`}</div>`;
+}
+
+/* ---------- Marking the openings ---------- */
+async function openMarker(c,s,plan){
+  pm={c,s,plan,zoom:1,sel:null,draw:null};
+  const bg=openModal(`<div class="modal-h"><h2>Mark openings: ${esc(s.job||"Stop")} · ${esc(planTitle(plan))}</h2>
+    <div class="bar"><button class="small" data-z="-1" aria-label="Zoom out">−</button><button class="small" data-z="0">Fit</button><button class="small" data-z="1" aria-label="Zoom in">+</button><button class="primary" data-close>Done</button></div></div>
+    <div class="pm-body"><div class="pm-scroll" id="pmScroll"><div class="pm-stage" id="pmStage"><div class="pm-msg">Loading the plan…</div></div></div>
+    <div class="pm-side"><p class="hint" style="margin:0;font-size:.85rem">Drag a box around each opening. Name it the way the plan does (like W-12 or SF-3) and pick the task it belongs to. The crew sees these highlighted on their phone, and they turn green when that task is done. Zoom with + and −, or Ctrl + mouse wheel.</p><div id="pmList" style="display:grid;gap:8px"></div></div></div>`, "pm");
+  bg.querySelectorAll("[data-z]").forEach(b=>b.onclick=()=>pmZoom(+b.dataset.z));
+  const stage=bg.querySelector("#pmStage");
+  stage.style.aspectRatio=plan.w+" / "+plan.h;
+  pmSize();
+  let src=planCache[plan.id];
+  if(!src){ try{ src=planCache[plan.id]=await call("apiPlanImage", BOOT.k, plan.id); }catch(e){ if(pm&&pm.plan===plan) stage.innerHTML=`<div class="pm-msg">${esc(e.message)}</div>`; return; } }
+  if(!pm||pm.plan!==plan) return;
+  stage.innerHTML=`<img alt="Plan page" src="${src}"><div id="pmMarks"></div>`;
+  pmWire(stage); pmPaint();
+}
+function closeMarker(){
+  const was=pm; pm=null; closeModal();
+  if(was){ rerenderCard(was.c); rememberJobPlans(was.s); }
+}
+function pmSize(){
+  const sc=document.getElementById("pmScroll"), st=document.getElementById("pmStage"); if(!sc||!st||!pm) return;
+  const fit=Math.max(200, Math.min(sc.clientWidth-24, (sc.clientHeight-40)*pm.plan.w/pm.plan.h));
+  st.style.width=Math.round(fit*pm.zoom)+"px";
+}
+function pmZoom(dir, at){
+  const sc=document.getElementById("pmScroll"); if(!sc||!pm) return;
+  const ax=at?at.x:sc.clientWidth/2, ay=at?at.y:sc.clientHeight/2;
+  const fx=(sc.scrollLeft+ax)/Math.max(1,sc.scrollWidth), fy=(sc.scrollTop+ay)/Math.max(1,sc.scrollHeight);
+  pm.zoom = dir===0 ? 1 : Math.min(8, Math.max(1, pm.zoom*(dir>0?1.5:1/1.5)));
+  pmSize();
+  sc.scrollLeft=fx*sc.scrollWidth-ax; sc.scrollTop=fy*sc.scrollHeight-ay;
+}
+function nextLabel(){
+  const ms=pm.plan.marks, last=ms[ms.length-1];
+  const m=last && /^(.*?)(\d+)(\D*)$/.exec(last.label||"");
+  if(m){ const n=String(+m[2]+1).padStart(m[2].length,"0"); return m[1]+n+m[3]; }
+  return "Opening "+(ms.length+1);
+}
+function pmWire(stage){
+  const sc=document.getElementById("pmScroll");
+  sc.addEventListener("wheel", e=>{ if(!e.ctrlKey) return; e.preventDefault(); const r=sc.getBoundingClientRect(); pmZoom(e.deltaY<0?1:-1,{x:e.clientX-r.left,y:e.clientY-r.top}); }, {passive:false});
+  const pt = e => { const r=stage.getBoundingClientRect(); return { x:Math.min(1,Math.max(0,(e.clientX-r.left)/r.width)), y:Math.min(1,Math.max(0,(e.clientY-r.top)/r.height)) }; };
+  stage.addEventListener("pointerdown", e=>{
+    if(e.button!==0) return;
+    const hit=e.target.closest(".mk[data-mk]");
+    if(hit){ pm.sel=hit.dataset.mk; pmPaint(); const inp=document.getElementById("ml-"+pm.sel); if(inp) inp.scrollIntoView({block:"nearest"}); return; }
+    e.preventDefault(); stage.setPointerCapture(e.pointerId);
+    const p=pt(e); pm.draw={x0:p.x,y0:p.y,el:document.createElement("div")};
+    pm.draw.el.className="mk sel"; document.getElementById("pmMarks").appendChild(pm.draw.el);
+  });
+  stage.addEventListener("pointermove", e=>{
+    if(!pm||!pm.draw) return; const p=pt(e), d=pm.draw;
+    Object.assign(d.el.style,{left:Math.min(d.x0,p.x)*100+"%",top:Math.min(d.y0,p.y)*100+"%",width:Math.abs(p.x-d.x0)*100+"%",height:Math.abs(p.y-d.y0)*100+"%"});
+  });
+  const end = e => {
+    if(!pm||!pm.draw) return; const p=pt(e), d=pm.draw; pm.draw=null; d.el.remove();
+    const r=stage.getBoundingClientRect(), w=Math.abs(p.x-d.x0), h=Math.abs(p.y-d.y0);
+    if(w*r.width<6 || h*r.height<6){ pm.sel=null; pmPaint(); return; }
+    const m={id:uid(),x:r4(Math.min(d.x0,p.x)),y:r4(Math.min(d.y0,p.y)),w:r4(w),h:r4(h),label:nextLabel(),task:""};
+    pm.plan.marks.push(m); pm.sel=m.id; save(); pmPaint();
+    const inp=document.getElementById("ml-"+m.id); if(inp){ inp.focus(); inp.select(); }
+  };
+  stage.addEventListener("pointerup", end); stage.addEventListener("pointercancel", end);
+  const list=document.getElementById("pmList");
+  list.addEventListener("input", e=>{ const id=e.target.dataset.ml; if(!id) return; const m=pm.plan.marks.find(x=>x.id===id); if(!m) return;
+    m.label=e.target.value.slice(0,40); const sp=document.querySelector(`.mk[data-mk="${id}"] span`); if(sp) sp.textContent=m.label; save(); });
+  list.addEventListener("change", e=>{ const id=e.target.dataset.mt; if(!id) return; const m=pm.plan.marks.find(x=>x.id===id); if(!m) return; m.task=e.target.value; save(); pmPaint(); });
+  list.addEventListener("click", e=>{
+    const del=e.target.closest("[data-md]"); if(del){ pm.plan.marks=pm.plan.marks.filter(x=>x.id!==del.dataset.md); if(pm.sel===del.dataset.md) pm.sel=null; save(); pmPaint(); return; }
+    const row=e.target.closest(".mk-row"); if(row && row.dataset.row!==pm.sel){ pm.sel=row.dataset.row; pmPaintMarks(); list.querySelectorAll(".mk-row").forEach(x=>x.classList.toggle("sel",x.dataset.row===pm.sel));
+      const el=document.querySelector(`.mk[data-mk="${pm.sel}"]`); if(el) el.scrollIntoView({block:"center",inline:"center",behavior:"smooth"}); }
+  });
+}
+document.addEventListener("keydown", e=>{
+  if(!pm) return;
+  if(e.key==="Escape"){ closeMarker(); return; }
+  if((e.key==="Delete"||e.key==="Backspace") && pm.sel && !/INPUT|SELECT|TEXTAREA/.test(document.activeElement&&document.activeElement.tagName)){
+    pm.plan.marks=pm.plan.marks.filter(x=>x.id!==pm.sel); pm.sel=null; save(); pmPaint(); e.preventDefault(); }
+});
+window.addEventListener("resize", ()=>{ if(pm) pmSize(); });
+function pmPaintMarks(){
+  const box=document.getElementById("pmMarks"); if(!box||!pm) return;
+  const done={}; pm.s.tasks.forEach(t=>{ if(t.doneAt) done[t.id]=1; });
+  box.innerHTML=pm.plan.marks.map(m=>`<div class="mk ${m.id===pm.sel?"sel":""} ${m.task&&done[m.task]?"done":""}" data-mk="${m.id}" style="left:${m.x*100}%;top:${m.y*100}%;width:${m.w*100}%;height:${m.h*100}%"><span>${esc(m.label)}</span></div>`).join("");
+}
+function pmPaint(){
+  if(!pm) return; pmPaintMarks();
+  const tasks=pm.s.tasks.filter(t=>t.text.trim());
+  document.getElementById("pmList").innerHTML = pm.plan.marks.length ? pm.plan.marks.map(m=>`<div class="mk-row ${m.id===pm.sel?"sel":""}" data-row="${m.id}">
+      <input id="ml-${m.id}" data-ml="${m.id}" value="${esc(m.label)}" aria-label="Opening name" maxlength="40">
+      <button class="x" data-md="${m.id}" aria-label="Delete this box">✕</button>
+      <select data-mt="${m.id}" aria-label="Task for this opening"><option value="">Not linked to a task</option>${tasks.map(t=>`<option value="${t.id}" ${t.id===m.task?"selected":""}>${esc(t.text)}${t.who&&t.who!==ALL?" ("+esc(t.who)+")":""}</option>`).join("")}${m.task&&!tasks.some(t=>t.id===m.task)?`<option value="${m.task}" selected>A removed task</option>`:""}</select>
+    </div>`).join("") : `<p class="hint" style="margin:0">No openings marked yet.</p>`;
+}
 
 /* ---------- Tips box (remembered on this computer) ---------- */
 let hideTip=false; try{ hideTip=localStorage.getItem("cgc-hide-tip")==="1"; }catch(e){}
