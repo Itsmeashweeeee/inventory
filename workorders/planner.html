@@ -352,17 +352,26 @@ function progressText(c){
   return `${all.filter(t=>t.doneAt).length} of ${all.length} done`;
 }
 function noteHtml(s){ return s.crewNote ? `<div class="crew-note"><b>Note from crew${s.crewNoteAt?", "+esc(clockOf(s.crewNoteAt)):""}</b><br>${esc(s.crewNote)}</div>` : ""; }
-/* ---------- Stuck tasks: unfinished and on the list STUCK_DAYS or more planned days ----------
-   A red bar sits above the crews on today's plan. The popup opens when the planner loads,
-   and again only when a new task becomes stuck (remembered on this computer). */
+/* ---------- Stuck tasks: unfinished and 3+ workdays old ----------
+   Looks at every planned day up to today, not just today's plan, so work left on a day a crew
+   never came back to still shows. A task counts once: its newest copy, if that copy isn't done,
+   wasn't carried forward, removed with X, or dropped here. A red bar sits above the crews; the
+   popup opens once a day when the planner loads (remembered on this computer). */
 const STUCK_DAYS = 3;
+function workdays(a,b){ let n=0; const [y,m,d]=a.split("-").map(Number); for(let x=new Date(y,m-1,d); ymd(x)<=b && n<400; x.setDate(x.getDate()+1)) if(x.getDay()%6) n++; return n; }
+const ymd = x => `${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,"0")}-${String(x.getDate()).padStart(2,"0")}`;
 function stuckTasks(){
-  if(!state.today || state.date!==state.today) return [];
+  if(!state.today) return [];
+  snapshot();
+  const all=Object.keys(state.history).sort(), gone=new Set();
+  all.forEach(d=>state.history[d].forEach(c=>{ (c.dismissed||[]).forEach(x=>gone.add(x)); c.stops.forEach(s=>s.tasks.forEach(t=>{ if(t.carried&&t.carried.src) gone.add(t.carried.src); })); }));
   const out=[];
-  state.crews.forEach(c=>c.stops.forEach(s=>s.tasks.forEach(t=>{
-    if(t.text.trim() && !t.doneAt && t.carried && t.carried.days>=STUCK_DAYS) out.push({c,s,t});
-  })));
-  return out.sort((a,b)=>b.t.carried.days-a.t.carried.days);
+  all.filter(d=>d<=state.today).forEach(d=>state.history[d].forEach(c=>c.stops.forEach(s=>s.tasks.forEach(t=>{
+    if(!String(t.text||"").trim() || t.doneAt || t.dropped || gone.has(t.id)) return;
+    const first=(t.carried&&t.carried.first)||d, n=(t.carried&&t.carried.days)||1, age=workdays(first,state.today);
+    if(n>=STUCK_DAYS || age>=STUCK_DAYS) out.push({c,s,t,d,first,n,age});
+  }))));
+  return out.sort((a,b)=>a.first<b.first?-1:a.first>b.first?1:0);
 }
 function paintStuck(popup){
   const bar=document.getElementById("stuckBar"); if(!bar) return;
@@ -370,26 +379,49 @@ function paintStuck(popup){
   bar.hidden=!list.length;
   if(!list.length) return;
   const jobs=new Set(list.map(x=>x.s.job.trim()||"a stop"));
-  bar.innerHTML=`<span>${list.length} unfinished task${list.length===1?"":"s"} on the list ${STUCK_DAYS}+ days (${esc([...jobs].join(", "))})</span><button class="small" id="stuckShow">See them</button>`;
+  bar.innerHTML=`<span>${list.length} unfinished task${list.length===1?"":"s"} ${STUCK_DAYS}+ days old (${esc([...jobs].join(", "))})</span><button class="small" id="stuckShow">See them</button>`;
   document.getElementById("stuckShow").onclick=showStuck;
   if(!popup || document.getElementById("modalBg")) return;
-  const sig=state.today+":"+list.map(x=>x.t.carried.src).sort().join(",");
+  const sig=state.today+":"+list.map(x=>x.t.id).sort().join(",");
   let seen=""; try{ seen=localStorage.getItem("cgc-stuck-seen")||""; }catch(e){}
   if(seen!==sig){ try{ localStorage.setItem("cgc-stuck-seen", sig); }catch(e){} showStuck(); }
 }
 function showStuck(){
-  const list=stuckTasks(); if(!list.length) return;
+  const list=stuckTasks(); if(!list.length){ closeModal(); return; }
   const groups={};
   list.forEach(x=>{ const k=(x.s.job.trim()||"Unnamed stop")+"|"+x.c.id; (groups[k]=groups[k]||{job:x.s.job.trim()||"Unnamed stop",lead:x.c.lead,items:[]}).items.push(x); });
-  const bg=openModal(`<div class="modal-h"><h2>Stuck ${STUCK_DAYS}+ days</h2><button class="x" data-close aria-label="Close">✕</button></div>
-    <div class="modal-b"><p class="hint" style="margin:0 0 14px;font-size:.9rem">These have rolled over day after day without being marked done. Check with the crew, change the plan, or click the task's X on the plan if it's no longer needed.</p>
-    <div class="stuck-list">${Object.values(groups).map(g=>`<div class="stuck-job"><h3>${esc(g.job)}${g.lead?` · ${esc(g.lead)}'s crew`:""}</h3>
-      ${g.items.map(x=>`<div class="stuck-item"><div><div>${esc(x.t.text)}</div><div class="sub"><span class="days">Day ${x.t.carried.days}</span> · first assigned ${esc(shortDay(x.t.carried.first))} · ${esc(x.t.who)}${x.t.goal?" · goal: "+esc(x.t.goal):""}</div></div><button class="small" data-goto="${x.t.id}">Show on plan</button></div>`).join("")}</div>`).join("")}</div>
-    <div style="margin-top:16px"><button class="primary" data-close>Got it</button></div></div>`, "small-m stuck-m");
-  bg.querySelector(".modal").style.width="min(620px,100%)";
-  bg.addEventListener("click", e=>{ const b=e.target.closest("[data-goto]"); if(!b) return; closeModal(); show("plan");
-    const row=document.querySelector(`.task-row[data-task="${b.dataset.goto}"]`); if(!row) return;
-    row.scrollIntoView({block:"center",behavior:"smooth"}); row.classList.add("flash"); setTimeout(()=>row.classList.remove("flash"),2500); });
+  const item = x => {
+    const here = x.d===state.date;
+    const where = x.d===state.today ? "on today's plan" : `last on the plan ${shortDay(x.d)}${x.d<state.today?", not carried to a later day":""}`;
+    return `<div class="stuck-item"><div><div>${esc(x.t.text)}</div><div class="sub"><span class="days">${x.age} workdays old</span>${x.n>1?` · Day ${x.n} on the plan`:""} · first assigned ${esc(shortDay(x.first))} · ${esc(x.t.who)}${x.t.goal?" · goal: "+esc(x.t.goal):""} · ${esc(where)}</div></div>
+      <div class="bar">${here?`<button class="small" data-goto="${x.t.id}">Show on plan</button>`:`<button class="small" data-open="${x.d}" data-task="${x.t.id}">Open ${esc(shortDay(x.d))}</button>`}<button class="small danger" data-drop="${x.t.id}" data-day="${x.d}">Drop it</button></div></div>`;
+  };
+  const bg=openModal(`<div class="modal-h"><h2>Unfinished ${STUCK_DAYS}+ days</h2><button class="x" data-close aria-label="Close">✕</button></div>
+    <div class="modal-b"><p class="hint" style="margin:0 0 14px;font-size:.9rem">These were assigned ${STUCK_DAYS} or more workdays ago and still aren't marked done. Check with the crew and put them on a plan, or click "Drop it" if the work is no longer needed.</p>
+    <div class="stuck-list">${Object.values(groups).map(g=>`<div class="stuck-job"><h3>${esc(g.job)}${g.lead?` · ${esc(g.lead)}'s crew`:""}</h3>${g.items.map(item).join("")}</div>`).join("")}</div>
+    <div style="margin-top:16px"><button class="primary" data-close>Got it</button></div></div>`, "small-m");
+  bg.querySelector(".modal").style.width="min(720px,100%)";
+  bg.addEventListener("click", async e=>{
+    const go=e.target.closest("[data-goto]"), op=e.target.closest("[data-open]"), dr=e.target.closest("[data-drop]");
+    if(dr){ if(!arm(dr,"Drop it")) return; await dropTask(dr.dataset.day, dr.dataset.drop); showStuck(); paintStuck(false); return; }
+    if(op){ closeModal(); show("plan"); await loadDate(op.dataset.open); flashTask(op.dataset.task); return; }
+    if(go){ closeModal(); show("plan"); flashTask(go.dataset.goto); }
+  });
+}
+function flashTask(id){
+  const row=document.querySelector(`.task-row[data-task="${id}"]`); if(!row) return;
+  row.scrollIntoView({block:"center",behavior:"smooth"}); row.classList.add("flash"); setTimeout(()=>row.classList.remove("flash"),2500);
+}
+/* Drop: the task stays in that day's history (so Look back by job still shows it), marked as no longer needed. */
+async function dropTask(day,id){
+  if(day===state.date){
+    state.crews.forEach(c=>c.stops.forEach(s=>{ const t=s.tasks.find(x=>x.id===id); if(t){ dismissCarry(c,t); s.tasks=s.tasks.filter(x=>x!==t); } }));
+    save(); renderCards(); return;
+  }
+  const crews=state.history[day]; if(!crews) return;
+  crews.forEach(c=>c.stops.forEach(s=>s.tasks.forEach(t=>{ if(t.id===id) t.dropped=true; })));
+  try{ state.history[day]=await call("apiSaveDay", BOOT.k, day, clone(crews)); }
+  catch(e){ modalMsg("Couldn't save that. Check your internet and try again."); }
 }
 function paintStatus(){
   state.crews.forEach(c=>{
@@ -694,21 +726,23 @@ function crewsFor(iso){
 /* ---------- Carry-over: unfinished work rolls to the next planned day ----------
    Each carried copy remembers the task it came from (src), the day it was first assigned (first) and how many days it has been on the list (days).
    Removing a carried task with the X records it in the crew's "dismissed" list so it doesn't come back. */
-function prevPlanned(iso){ return Object.keys(state.history).filter(d=>d<iso && isUsed(state.history[d])).sort().pop(); }
+/* Each crew carries from its own last planned day, so a crew that sat out a day (or a week) still gets its unfinished work back. */
+function crewOn(day,cid){ const c=(day||[]).find(x=>x.id===cid); return c && (c.stops||[]).some(s=>(s.tasks||[]).some(t=>String(t.text||"").trim())) ? c : null; }
+function prevForCrew(iso,cid){ return Object.keys(state.history).filter(d=>d<iso && crewOn(state.history[d],cid)).sort().pop(); }
 async function refreshPrev(iso){
-  const p=prevPlanned(iso); if(!p) return;
-  try{ const fresh=await call("apiGetDay", BOOT.k, p); if(fresh) state.history[p]=fresh; }catch(e){}
+  const days=new Set(state.crews.map(c=>prevForCrew(iso,c.id)).filter(d=>d && d<=state.today));
+  for(const p of days){ try{ const fresh=await call("apiGetDay", BOOT.k, p); if(fresh) state.history[p]=fresh; }catch(e){} }
 }
 function dismissCarry(c,t){ if(t && t.carried && t.carried.src){ c.dismissed=c.dismissed||[]; if(!c.dismissed.includes(t.carried.src)) c.dismissed.push(t.carried.src); } }
 const isBlankStop = s => !s.job.trim() && !s.address.trim() && !s.tasks.some(t=>t.text.trim()) && !String(s.materials||"").trim() && !String(s.notes||"").trim() && !(s.plans&&s.plans.length);
 function carryInto(iso, crews){
   if(!state.today || iso < state.today) return false;
-  const p=prevPlanned(iso); if(!p || p > state.today) return false;
-  const src=state.history[p], srcTasks={};
-  src.forEach(c=>(c.stops||[]).forEach(s=>(s.tasks||[]).forEach(t=>{ if(String(t.text||"").trim()) srcTasks[t.id]=t; })));
   let changed=false;
   crews.forEach(c=>{
     c.dismissed=c.dismissed||[];
+    const p=prevForCrew(iso,c.id); if(!p || p > state.today) return;
+    const srcCrew=crewOn(state.history[p],c.id), srcTasks={};
+    srcCrew.stops.forEach(s=>(s.tasks||[]).forEach(t=>{ if(String(t.text||"").trim()) srcTasks[t.id]=t; }));
     c.stops.forEach(s=>{
       const keep=s.tasks.filter(t=>!(t.carried && !t.doneAt && srcTasks[t.carried.src] && srcTasks[t.carried.src].doneAt));
       if(keep.length!==s.tasks.length){ s.tasks=keep; changed=true; }
@@ -716,11 +750,10 @@ function carryInto(iso, crews){
     const before=c.stops.length;
     c.stops=c.stops.filter(s=>!(s.carriedStop && !s.tasks.length));
     if(c.stops.length!==before) changed=true;
-    const srcCrew=src.find(x=>x.id===c.id); if(!srcCrew) return;
     const have=new Set(); c.stops.forEach(s=>s.tasks.forEach(t=>{ if(t.carried) have.add(t.carried.src); }));
     const newStops=[];
     srcCrew.stops.forEach(ss=>{
-      const left=(ss.tasks||[]).filter(t=>String(t.text||"").trim() && !t.doneAt && !have.has(t.id) && !c.dismissed.includes(t.id));
+      const left=(ss.tasks||[]).filter(t=>String(t.text||"").trim() && !t.doneAt && !t.dropped && !have.has(t.id) && !c.dismissed.includes(t.id));
       if(!left.length) return;
       const job=String(ss.job||"").trim().toLowerCase();
       let target=job ? c.stops.find(x=>x.job.trim().toLowerCase()===job) || newStops.find(x=>x.job.trim().toLowerCase()===job) : null;
@@ -794,7 +827,7 @@ function renderHistory(){
   const done=rows.filter(r=>r.t.doneAt).length;
   out.innerHTML = `<p class="hint" style="font-size:.9rem">Scheduled on ${days} day${days===1?"":"s"}. ${done} of ${rows.length} tasks marked done${bid?`. Bid ${esc(bid)} man-hours`:""}. Compare to the hours in QB Workforce for this job.</p>
   <table class="hist"><thead><tr><th>Date</th><th>Crew</th><th>Who</th><th>Task</th><th>Goal</th><th>Done</th></tr></thead><tbody>
-  ${rows.map(r=>`<tr><td class="d">${esc(new Date(r.date+"T12:00").toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"}))}</td><td>${esc(r.lead)}</td><td>${esc(r.t.who)}</td><td>${esc(r.t.text)}</td><td>${esc(r.t.goal||"")}</td><td class="d">${r.t.doneAt?esc(clockOf(r.t.doneAt))+(r.t.doneBy?" by "+esc(r.t.doneBy):""):"Not done"}${r.t.carried&&r.t.carried.days>1?" (day "+r.t.carried.days+")":""}</td></tr>`).join("")}
+  ${rows.map(r=>`<tr><td class="d">${esc(new Date(r.date+"T12:00").toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"}))}</td><td>${esc(r.lead)}</td><td>${esc(r.t.who)}</td><td>${esc(r.t.text)}</td><td>${esc(r.t.goal||"")}</td><td class="d">${r.t.doneAt?esc(clockOf(r.t.doneAt))+(r.t.doneBy?" by "+esc(r.t.doneBy):""):r.t.dropped?"Dropped":"Not done"}${r.t.carried&&r.t.carried.days>1?" (day "+r.t.carried.days+")":""}</td></tr>`).join("")}
   </tbody></table>`;
 }
 document.getElementById("histJob").onchange=renderHistory;
