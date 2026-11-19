@@ -134,6 +134,9 @@ td.goal{width:16%;text-align:right!important;color:#333}
 .top-right{display:grid;gap:4px;justify-items:end}
 #loading{position:fixed;inset:0;display:grid;place-items:center;background:var(--bg);z-index:20;font-size:1rem;color:var(--muted)}
 #loading.err{color:var(--warn);padding:24px;text-align:center}
+.share-row{display:flex;align-items:center;gap:7px;text-transform:none;letter-spacing:0;font-weight:600;font-size:.88rem;color:var(--fg);background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:6px 10px}
+.share-row input{width:auto;margin:0}
+.share-row.on{border-color:var(--ok);color:var(--ok);background:var(--ok-soft)}
 /* ---------- Stuck tasks (on the list 3+ days) ---------- */
 .stuck-bar{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;justify-content:space-between;background:var(--panel);border:1px solid var(--warn);border-left:6px solid var(--warn);border-radius:8px;padding:10px 14px;color:var(--warn);font-weight:600}
 .stuck-list{display:grid;gap:14px}
@@ -182,6 +185,7 @@ td.goal{width:16%;text-align:right!important;color:#333}
     </div>
     <div class="top-right">
       <label for="planDate">Work date<input type="date" id="planDate"></label>
+      <label class="share-row" id="shareRow" for="shareDay" hidden><input type="checkbox" id="shareDay"> Crews can see this plan now</label>
       <span class="savepill" id="saveState" aria-live="polite"></span>
     </div>
   </header>
@@ -519,7 +523,17 @@ function renderCard(c,i){
   </article>`;
 }
 
-function renderCards(){ document.getElementById("cards").innerHTML = state.crews.map(renderCard).join(""); paintStuck(false); }
+function renderCards(){ document.getElementById("cards").innerHTML = state.crews.map(renderCard).join(""); paintStuck(false); paintShare(); }
+/* ---------- Share a future day with the crews ----------
+   Off: crews see this day only when it arrives. On: their link also shows it as a look-only preview. Saved on each crew (share). */
+function paintShare(){
+  const row=document.getElementById("shareRow"), box=document.getElementById("shareDay"); if(!row) return;
+  row.hidden=!(state.today && state.date>state.today);
+  const on=state.crews.length>0 && state.crews.every(c=>c.share);
+  box.checked=on; row.classList.toggle("on",on);
+  row.title=on?"Each crew's link shows this day as a preview.":"Crews see this plan only when the day comes. Turn on when it's ready.";
+}
+document.getElementById("shareDay").addEventListener("change", e=>{ state.crews.forEach(c=>c.share=e.target.checked); paintShare(); save(); flushDay(); });
 function rerenderCard(c){
   const el=document.querySelector(`.card[data-id="${c.id}"]`); if(!el) return renderCards();
   const tmp=document.createElement("div"); tmp.innerHTML=renderCard(c,state.crews.indexOf(c)); el.replaceWith(tmp.firstElementChild); paintStuck(false);
@@ -597,7 +611,7 @@ cards.addEventListener("click", e=>{
     rememberJobPlans(s); queueSettingsSave(); btn.textContent=ex?"Job updated":"Job saved"; setTimeout(()=>rerenderCard(c),900);
   }
 });
-document.getElementById("addSheet").onclick=()=>{ state.crews.push(blankCrew()); save(); renderCards(); };
+document.getElementById("addSheet").onclick=()=>{ const c=blankCrew(); if(state.date>state.today && state.crews.length && state.crews.every(x=>x.share)) c.share=true; state.crews.push(c); save(); renderCards(); };
 const nd=document.getElementById("newDay"), ndh=document.getElementById("newDayHint");
 nd.onclick=()=>{
   if(!nd.classList.contains("armed")){ nd.classList.add("armed"); nd.textContent="Confirm new day"; ndh.hidden=false;

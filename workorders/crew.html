@@ -83,6 +83,12 @@ button.btn.ghost{background:var(--panel);color:var(--fg);border-color:var(--line
 .ph-btns .btn{padding:14px 10px}
 .ph-msg{margin:0;font-size:.9rem;color:var(--muted)}
 .t-sub .addph{color:var(--s0);font-weight:600;text-decoration:underline}
+.day-tabs{display:grid;grid-template-columns:1fr 1fr;gap:6px;background:#dfe6e6;border-radius:10px;padding:4px}
+.day-tabs button{font:inherit;font-weight:600;font-size:.95rem;border:none;border-radius:8px;padding:10px 8px;background:transparent;color:var(--fg)}
+.day-tabs button[aria-pressed="true"]{background:var(--panel);box-shadow:0 1px 3px rgba(0,0,0,.15)}
+.preview{background:#fff4e8;border:1px solid #f0c99c;color:#7a3b06;border-radius:10px;padding:10px 12px;font-size:.95rem;font-weight:600}
+.task.ro{cursor:default;grid-template-columns:minmax(0,1fr)}
+.next-note{font-size:.92rem;color:var(--muted);text-align:center;margin:0}
 .t-sub .op{color:var(--fg)}
 .plans{display:flex;flex-wrap:wrap;gap:8px}
 .plans .btn{display:inline-flex;gap:6px;align-items:center}
@@ -117,6 +123,8 @@ button.btn.ghost{background:var(--panel);color:var(--fg);border-color:var(--line
 <div class="wrap">
   <div id="state" class="center">Loading your work order…</div>
   <div id="err" class="msg" hidden></div>
+  <div class="day-tabs" id="dayTabs" hidden><button id="tabToday" aria-pressed="true">Today</button><button id="tabNext" aria-pressed="false"></button></div>
+  <div class="preview" id="preview" hidden></div>
   <div id="page" hidden>
     <div>
       <div class="co">Commercial Glass Company</div>
@@ -129,6 +137,7 @@ button.btn.ghost{background:var(--panel);color:var(--fg);border-color:var(--line
     <div class="bar"><span id="progBar"></span></div>
   </div>
   <div id="stops" style="display:grid;gap:14px"></div>
+  <p class="next-note" id="nextNote" hidden></p>
   <div class="foot" id="foot" hidden><button class="btn ghost" id="refresh">Refresh</button></div>
   <p class="tip" id="tip" hidden>Tip: save this page to your home screen. iPhone: tap Share, then Add to Home Screen. Android: tap the three dots, then Add to Home screen. It opens today's work every time.</p>
 </div>
@@ -163,7 +172,7 @@ button.btn.ghost{background:var(--panel);color:var(--fg);border-color:var(--line
 <script>
 const Q = new URLSearchParams(location.search);
 const BOOT = { c: Q.get("crew") || "", k: Q.get("k") || "", url: location.href.split("?")[0].split("#")[0].replace(/[^\/]*$/, "crew.html") };
-let crew=null, date="", pickFor=null;
+let crew=null, date="", pickFor=null, nxt=null, view="today", missingMsg="";
 /* Google strips anything after two slashes when it loads this page, so web addresses are built in pieces. */
 const MAPS_URL=["https:","","www.google.com","maps","search",""].join("/");
 const armed={}, drafts={};
@@ -188,10 +197,33 @@ const errBox=document.getElementById("err");
 function showErr(msg){ errBox.textContent=msg; errBox.hidden=false; clearTimeout(showErr.t); showErr.t=setTimeout(()=>errBox.hidden=true, 7000); }
 function errText(e){ const m=e&&e.message?String(e.message):""; return /network|failed to fetch|timed out|NetworkError/i.test(m)||!m ? "No signal. It didn't save. Try again when you have service." : m; }
 
+/* Two views: today (tap tasks done) and the crew's next planned day, once David shares it (look only). */
+const shortName = iso => { const [y,m,d]=iso.split("-").map(Number); return new Date(y,m-1,d).toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"}); };
+function paintTabs(){
+  const tabs=document.getElementById("dayTabs"), ready=nxt&&nxt.crew;
+  tabs.hidden=!ready;
+  if(ready){ document.getElementById("tabNext").textContent=shortName(nxt.date); document.getElementById("tabToday").setAttribute("aria-pressed",view==="today"); document.getElementById("tabNext").setAttribute("aria-pressed",view==="next"); }
+  const pv=document.getElementById("preview");
+  pv.hidden=view!=="next";
+  pv.textContent="Preview of "+(nxt?dayName(nxt.date):"")+". David may still change it, so check again that morning. Tasks get checked off on the day.";
+  const nn=document.getElementById("nextNote");
+  nn.hidden=!(view==="today" && nxt && !nxt.crew);
+  nn.textContent=nxt&&!nxt.crew ? "David hasn't shared the plan for "+dayName(nxt.date)+" yet." : "";
+}
+document.getElementById("tabToday").onclick=()=>{ view="today"; render(); window.scrollTo(0,0); };
+document.getElementById("tabNext").onclick=()=>{ view="next"; render(); window.scrollTo(0,0); };
+const shownCrew = () => view==="next" ? nxt.crew : crew, shownDate = () => view==="next" ? nxt.date : date;
 function render(){
+  paintTabs();
+  const ro=view==="next", crew=shownCrew(), date=shownDate();
+  document.getElementById("foot").hidden=false;
+  if(!crew){
+    document.getElementById("state").hidden=false; document.getElementById("state").textContent=missingMsg;
+    document.getElementById("page").hidden=true; document.getElementById("prog").hidden=true; document.getElementById("stops").innerHTML=""; document.getElementById("tip").hidden=true;
+    return;
+  }
   document.getElementById("state").hidden=true;
   document.getElementById("page").hidden=false;
-  document.getElementById("foot").hidden=false;
   document.getElementById("tip").hidden=false;
   document.getElementById("day").textContent=dayName(date);
   const members=String(crew.members||"").split(",").map(x=>x.trim()).filter(Boolean).join(", ");
@@ -202,7 +234,7 @@ function render(){
   const all=stops.flatMap(s=>s.tasks.filter(t=>t.text.trim()));
   const done=all.filter(t=>t.doneAt).length;
   const prog=document.getElementById("prog");
-  prog.hidden=!all.length;
+  prog.hidden=!all.length||ro;
   document.getElementById("progText").textContent=`${done} of ${all.length} tasks done`;
   document.getElementById("progPct").textContent=all.length?Math.round(done/all.length*100)+"%":"";
   document.getElementById("progBar").style.width=(all.length?done/all.length*100:0)+"%";
@@ -218,17 +250,17 @@ function render(){
           ${maps?`<a class="pill" href="${maps}" target="_blank" rel="noopener">Open in Maps</a>`:""}
           ${s.gcPhone?`<a class="pill" href="tel:${esc(telOf(s.gcPhone))}">Call ${esc(s.gcPhone)}</a>`:""}
         </div></div>`:""}
-      ${(s.plans||[]).length?`<div class="plans">${s.plans.map(p=>`<button class="btn" data-plan="${esc(p.id)}" data-stop="${esc(s.id)}">${s.plans.length>1?"Plan: "+esc(planTitle(p)):"View plan"}<span style="font-weight:500;opacity:.85">(${(p.marks||[]).length} opening${(p.marks||[]).length===1?"":"s"})</span></button>`).join("")}</div>`:""}
-      ${tasks.length?`<div class="tasks">${tasks.map(t=>taskHtml(t,s)).join("")}</div>`:""}
+      ${(s.plans||[]).length?`<div class="plans">${s.plans.map(p=>`<button class="btn" data-plan="${esc(p.id)}" data-stop="${esc(s.id)}" data-day="${ro?"next":"today"}">${s.plans.length>1?"Plan: "+esc(planTitle(p)):"View plan"}<span style="font-weight:500;opacity:.85">(${(p.marks||[]).length} opening${(p.marks||[]).length===1?"":"s"})</span></button>`).join("")}</div>`:""}
+      ${tasks.length?`<div class="tasks">${tasks.map(t=>taskHtml(t,s,ro)).join("")}</div>`:""}
       ${s.materials||s.notes?`<div class="extra">${s.materials?`<div><span class="k">Load</span>${esc(s.materials)}</div>`:""}${s.notes?`<div><span class="k">Notes</span>${esc(s.notes)}</div>`:""}</div>`:""}
-      <div class="note">
+      ${ro?"":`<div class="note">
         <label for="note-${s.id}">Note to David (problem, missing material, can't finish)</label>
         <textarea id="note-${s.id}" data-draft="${s.id}" maxlength="1000">${esc(s.id in drafts?drafts[s.id]:(s.crewNote||""))}</textarea>
         <div class="send"><button class="btn" data-note="${s.id}">Send note</button><span class="sent" id="sent-${s.id}">${s.crewNoteAt?"Sent "+esc(clockOf(s.crewNoteAt)):""}</span></div>
-      </div>
+      </div>`}
     </section>`;}).join("") : `<div class="center">Nothing is planned for your crew yet. Check with David.</div>`;
 }
-function taskHtml(t,s){
+function taskHtml(t,s,ro){
   const sub=[`<span class="who">${esc(t.who)}</span>`];
   if(t.goal) sub.push(`<span class="goal">Goal: ${esc(t.goal)}</span>`);
   const ops=openingsOf(s,t); if(ops.length) sub.push(`<span class="op">Openings: ${esc(ops.join(", "))}</span>`);
@@ -238,6 +270,7 @@ function taskHtml(t,s){
   if(t.doneAt && t.photoReq) sub.push(`<span class="addph" data-addph="${t.id}" role="button" tabindex="0">Add more photos</span>`);
   else if(t.photoReq) sub.push(`<span class="ph">Photo needed to finish</span>`);
   if(armed[t.id]) sub.push(`<span class="undo">Tap again to undo</span>`);
+  if(ro) return `<div class="task ro"><span><span class="t-text">${esc(t.text)}</span><span class="t-sub">${sub.filter(x=>!/addph|class="ph"|class="ok"/.test(x)).join("")}</span></span></div>`;
   return `<button class="task ${t.doneAt?"done":""}" data-task="${t.id}" aria-pressed="${t.doneAt?"true":"false"}">
     <span class="check" aria-hidden="true"></span>
     <span><span class="t-text">${esc(t.text)}</span><span class="t-sub">${sub.join("")}</span></span>
@@ -248,7 +281,7 @@ function findTask(id){ for(const s of crew.stops) for(const t of s.tasks) if(t.i
 
 document.getElementById("stops").addEventListener("click", async e=>{
   const pb=e.target.closest("button[data-plan]");
-  if(pb){ openPlan(pb.dataset.stop, pb.dataset.plan); return; }
+  if(pb){ openPlan(pb.dataset.stop, pb.dataset.plan, pb.dataset.day==="next"); return; }
   const ap=e.target.closest("[data-addph]");
   if(ap){ const t=findTask(ap.dataset.addph); if(t) openPhotos(t,t.doneBy||"",false); return; }
   const nb=e.target.closest("button[data-note]");
@@ -365,8 +398,8 @@ const planImgs={}, pvEl=document.getElementById("pv"), pvView=document.getElemen
 let pv=null;
 const planTitle = p => p.sheet || ((p.name||"Plan") + (p.pages>1 ? ", page "+p.page : ""));
 const openingsOf = (s,t) => (s.plans||[]).flatMap(p=>(p.marks||[]).filter(m=>m.task===t.id).map(m=>m.label||"Opening"));
-async function openPlan(stopId, planId){
-  const s=crew.stops.find(x=>x.id===stopId), p=s&&(s.plans||[]).find(x=>x.id===planId); if(!p) return;
+async function openPlan(stopId, planId, isNext){
+  const s=((isNext&&nxt&&nxt.crew)?nxt.crew:crew).stops.find(x=>x.id===stopId), p=s&&(s.plans||[]).find(x=>x.id===planId); if(!p) return;
   pv={s,p,sel:"",x:0,y:0,k:1,fit:1};
   document.getElementById("pvTitle").textContent=(s.job||"Plan")+" · "+planTitle(p);
   pvStage.innerHTML=""; pvStage.hidden=true; pvMsg.textContent="Loading the plan…"; pvMsg.hidden=false;
@@ -456,12 +489,13 @@ pvView.addEventListener("pointerup", ptrEnd); pvView.addEventListener("pointerca
 async function load(){
   try{
     const d=await call("apiCrew", BOOT.c);
-    date=d.date;
-    if(d.missing){ document.getElementById("state").textContent = d.standing
-        ? "Nothing is planned for your crew on " + dayName(d.date) + " yet. Check back after David finishes the plan, then tap Refresh."
-        : "This work order isn't there anymore. Ask David for your crew link.";
-      document.getElementById("foot").hidden=false; return; }
-    crew=d.crew; render();
+    date=d.date; nxt=d.next||null;
+    crew=d.missing?null:d.crew;
+    missingMsg = d.missing ? (d.standing
+        ? "Nothing is planned for your crew on " + dayName(d.date) + "." + (nxt&&nxt.crew ? " Tap " + shortName(nxt.date) + " above to see what's next." : " Check back after David finishes the plan, then tap Refresh.")
+        : "This work order isn't there anymore. Ask David for your crew link.") : "";
+    if(!(nxt&&nxt.crew)) view="today";
+    render();
   }catch(e){ document.getElementById("state").textContent=errText(e)+" Pull down to reload."; }
 }
 document.getElementById("refresh").onclick=load;
