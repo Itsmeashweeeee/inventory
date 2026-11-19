@@ -72,6 +72,17 @@ button.btn.ghost{background:var(--panel);color:var(--fg);border-color:var(--line
 .who-task{margin:0;color:var(--muted);font-size:.95rem}
 .who-names{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px}
 .who-names .btn{padding:14px 12px;font-size:1.05rem}
+.ph-thumbs{display:grid;grid-template-columns:repeat(auto-fill,minmax(88px,1fr));gap:8px}
+.ph-thumbs:empty{display:none}
+.ph-th{position:relative;aspect-ratio:1;border-radius:8px;overflow:hidden;background:var(--bg);border:1px solid var(--line)}
+.ph-th img{width:100%;height:100%;object-fit:cover;display:block}
+.ph-th button{position:absolute;top:4px;right:4px;width:30px;height:30px;border-radius:50%;border:none;background:rgba(20,32,31,.75);color:#fff;font-size:1rem;line-height:1}
+.ph-th.up::after{content:"";position:absolute;inset:0;background:rgba(255,255,255,.55)}
+.ph-th.ok::after{content:"✓";position:absolute;inset:0;display:grid;place-items:center;font-size:2rem;font-weight:700;color:#fff;background:rgba(47,122,58,.55)}
+.ph-btns{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.ph-btns .btn{padding:14px 10px}
+.ph-msg{margin:0;font-size:.9rem;color:var(--muted)}
+.t-sub .addph{color:var(--s0);font-weight:600;text-decoration:underline}
 .t-sub .op{color:var(--fg)}
 .plans{display:flex;flex-wrap:wrap;gap:8px}
 .plans .btn{display:inline-flex;gap:6px;align-items:center}
@@ -122,6 +133,18 @@ button.btn.ghost{background:var(--panel);color:var(--fg);border-color:var(--line
   <p class="tip" id="tip" hidden>Tip: save this page to your home screen. iPhone: tap Share, then Add to Home Screen. Android: tap the three dots, then Add to Home screen. It opens today's work every time.</p>
 </div>
 <input type="file" id="cam" accept="image/*" capture="environment" hidden>
+<input type="file" id="pick" accept="image/*" multiple hidden>
+<div class="who-bg" id="phBg" hidden>
+  <div class="who-sheet" role="dialog" aria-modal="true" aria-labelledby="phTitle">
+    <h3 id="phTitle">Photos</h3>
+    <p class="who-task" id="phTask"></p>
+    <div class="ph-thumbs" id="phThumbs"></div>
+    <div class="ph-btns"><button class="btn ghost" id="phCam">Take a photo</button><button class="btn ghost" id="phPick">Choose photos</button></div>
+    <p class="ph-msg" id="phMsg"></p>
+    <button class="btn" id="phDone" disabled>Add photos</button>
+    <button class="btn ghost" id="phCancel">Cancel</button>
+  </div>
+</div>
 <div class="pv" id="pv" hidden role="dialog" aria-modal="true" aria-labelledby="pvTitle">
   <div class="pv-h"><h3 id="pvTitle"></h3><button class="pv-x" id="pvClose">Close</button></div>
   <div class="pv-view" id="pvView"><div class="pv-stage" id="pvStage"></div><div class="pv-msg" id="pvMsg"></div>
@@ -140,7 +163,7 @@ button.btn.ghost{background:var(--panel);color:var(--fg);border-color:var(--line
 <script>
 const Q = new URLSearchParams(location.search);
 const BOOT = { c: Q.get("crew") || "", k: Q.get("k") || "", url: location.href.split("?")[0].split("#")[0].replace(/[^\/]*$/, "crew.html") };
-let crew=null, date="", pendingPhotoTask=null, pendingBy="", pickFor=null;
+let crew=null, date="", pickFor=null;
 /* Google strips anything after two slashes when it loads this page, so web addresses are built in pieces. */
 const MAPS_URL=["https:","","www.google.com","maps","search",""].join("/");
 const armed={}, drafts={};
@@ -210,7 +233,9 @@ function taskHtml(t,s){
   if(t.goal) sub.push(`<span class="goal">Goal: ${esc(t.goal)}</span>`);
   const ops=openingsOf(s,t); if(ops.length) sub.push(`<span class="op">Openings: ${esc(ops.join(", "))}</span>`);
   if(t.carried && t.carried.days>1 && !t.doneAt) sub.push(`<span class="carried">Day ${t.carried.days}, carried over</span>`);
-  if(t.doneAt) sub.push(`<span class="ok">Done ${esc(clockOf(t.doneAt))}${t.doneBy?" by "+esc(t.doneBy):""}${t.photo?" with photo":""}</span>`);
+  const np=(t.photos&&t.photos.length)||(t.photo?1:0);
+  if(t.doneAt) sub.push(`<span class="ok">Done ${esc(clockOf(t.doneAt))}${t.doneBy?" by "+esc(t.doneBy):""}${np?` with ${np===1?"photo":np+" photos"}`:""}</span>`);
+  if(t.doneAt && t.photoReq) sub.push(`<span class="addph" data-addph="${t.id}" role="button" tabindex="0">Add more photos</span>`);
   else if(t.photoReq) sub.push(`<span class="ph">Photo needed to finish</span>`);
   if(armed[t.id]) sub.push(`<span class="undo">Tap again to undo</span>`);
   return `<button class="task ${t.doneAt?"done":""}" data-task="${t.id}" aria-pressed="${t.doneAt?"true":"false"}">
@@ -224,6 +249,8 @@ function findTask(id){ for(const s of crew.stops) for(const t of s.tasks) if(t.i
 document.getElementById("stops").addEventListener("click", async e=>{
   const pb=e.target.closest("button[data-plan]");
   if(pb){ openPlan(pb.dataset.stop, pb.dataset.plan); return; }
+  const ap=e.target.closest("[data-addph]");
+  if(ap){ const t=findTask(ap.dataset.addph); if(t) openPhotos(t,t.doneBy||"",false); return; }
   const nb=e.target.closest("button[data-note]");
   if(nb){ sendNote(nb.dataset.note, nb); return; }
   const b=e.target.closest("button[data-task]"); if(!b || b.classList.contains("busy")) return;
@@ -259,7 +286,7 @@ document.getElementById("whoCancel").onclick=closeWho;
 whoBg.addEventListener("click", e=>{ if(e.target===whoBg) closeWho(); });
 document.addEventListener("keydown", e=>{ if(e.key==="Escape" && !whoBg.hidden) closeWho(); });
 function finish(t,name){
-  if(t.photoReq){ pendingPhotoTask=t; pendingBy=name; const cam=document.getElementById("cam"); cam.value=""; cam.click(); return; }
+  if(t.photoReq){ openPhotos(t,name,true); return; }
   mark(t,true,null,name);
 }
 async function mark(t,done,b,by){
@@ -268,15 +295,55 @@ async function mark(t,done,b,by){
   try{ crew = await call("apiMark", BOOT.c, t.id, done, by||""); render(); }
   catch(e){ t.doneAt=before; t.doneBy=beforeBy; render(); showErr(errText(e)); }
 }
-document.getElementById("cam").addEventListener("change", async e=>{
-  const f=e.target.files&&e.target.files[0], t=pendingPhotoTask, by=pendingBy; pendingPhotoTask=null; pendingBy="";
-  if(!f||!t) return;
-  const b=document.querySelector(`button[data-task="${t.id}"]`); if(b){ b.classList.add("busy"); b.querySelector(".t-sub").insertAdjacentHTML("beforeend",`<span class="ph">Uploading photo…</span>`); }
-  try{
-    const data=await shrink(f);
-    crew = await call("apiPhoto", BOOT.c, t.id, data, by); render();
-  }catch(err){ render(); showErr(err&&err.message&&!/network|fetch/i.test(err.message)?err.message:"The photo didn't upload. Try again when you have service."); }
-});
+
+/* ---------- Photos: take or pick several, then send them one at a time ----------
+   finishing: the task gets marked done with the last photo. Otherwise ("Add more photos") the photos are only added. */
+const PH_MAX=10, phBg=document.getElementById("phBg"), phThumbs=document.getElementById("phThumbs"), phDone=document.getElementById("phDone"), phMsg=document.getElementById("phMsg");
+let ph=null;
+function openPhotos(t,by,finishing){
+  ph={t,by,finishing,items:[],busy:false};
+  document.getElementById("phTitle").textContent = finishing ? "Photos to finish this task" : "Add more photos";
+  document.getElementById("phTask").textContent=t.text;
+  paintPhotos(); phBg.hidden=false;
+}
+function closePhotos(){ if(ph&&ph.busy) return; ph=null; phBg.hidden=true; }
+function paintPhotos(){
+  if(!ph) return;
+  phThumbs.innerHTML=ph.items.map((it,i)=>`<div class="ph-th ${it.state||""}"><img alt="Photo ${i+1}" src="${it.data}">${ph.busy?"":`<button data-rm="${i}" aria-label="Remove photo ${i+1}">✕</button>`}</div>`).join("");
+  const n=ph.items.length;
+  phDone.disabled=!n||ph.busy;
+  phDone.textContent = ph.busy ? phDone.textContent : !n ? (ph.finishing?"Add at least 1 photo":"Add photos") : (ph.finishing?`Mark done with ${n} photo${n===1?"":"s"}`:`Add ${n} photo${n===1?"":"s"}`);
+  document.getElementById("phCam").disabled=document.getElementById("phPick").disabled=ph.busy||n>=PH_MAX;
+  if(!ph.busy) phMsg.textContent = n>=PH_MAX ? `That's the most for one task (${PH_MAX}).` : "";
+}
+async function addFiles(files){
+  if(!ph) return;
+  const list=[...(files||[])].slice(0, PH_MAX-ph.items.length);
+  for(const f of list){ try{ ph.items.push({data:await shrink(f)}); }catch(e){ showErr(e.message); } paintPhotos(); }
+}
+document.getElementById("phCam").onclick=()=>{ const i=document.getElementById("cam"); i.value=""; i.click(); };
+document.getElementById("phPick").onclick=()=>{ const i=document.getElementById("pick"); i.value=""; i.click(); };
+document.getElementById("cam").addEventListener("change", e=>addFiles(e.target.files));
+document.getElementById("pick").addEventListener("change", e=>addFiles(e.target.files));
+phThumbs.addEventListener("click", e=>{ const b=e.target.closest("[data-rm]"); if(!b||!ph||ph.busy) return; ph.items.splice(+b.dataset.rm,1); paintPhotos(); });
+document.getElementById("phCancel").onclick=closePhotos;
+phBg.addEventListener("click", e=>{ if(e.target===phBg) closePhotos(); });
+phDone.onclick=async ()=>{
+  if(!ph||ph.busy||!ph.items.length) return;
+  const p=ph; p.busy=true; paintPhotos();
+  const todo=p.items.filter(it=>it.state!=="ok");
+  for(let i=0;i<todo.length;i++){
+    const it=todo[i], last=i===todo.length-1;
+    phDone.textContent=`Uploading ${i+1} of ${todo.length}…`; it.state="up"; paintPhotos();
+    try{ crew = await call("apiPhoto", BOOT.c, p.t.id, it.data, p.by, !(p.finishing && last)); it.state="ok"; paintPhotos(); }
+    catch(err){
+      it.state=""; p.busy=false; p.items=p.items.filter(x=>x.state!=="ok"); paintPhotos(); render();
+      phMsg.textContent=(err&&err.message&&!/network|fetch|connection/i.test(err.message)?err.message:"No signal. ")+" The photos still here didn't upload. Tap the button to try again.";
+      return;
+    }
+  }
+  p.busy=false; ph=null; phBg.hidden=true; render();
+};
 function shrink(file){
   return new Promise((res,rej)=>{
     const img=new Image(), url=URL.createObjectURL(file);

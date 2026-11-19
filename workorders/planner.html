@@ -325,7 +325,7 @@ function applyCrewUpdates(serverCrews){
   serverCrews.forEach(c=>(c.stops||[]).forEach(s=>{ stops[s.id]=s; (s.tasks||[]).forEach(t=>tasks[t.id]=t); }));
   state.crews.forEach(c=>c.stops.forEach(s=>{
     const os=stops[s.id]; s.crewNote=os?os.crewNote||"":""; s.crewNoteAt=os?os.crewNoteAt||"":"";
-    s.tasks.forEach(t=>{ const ot=tasks[t.id]; t.doneAt=ot?ot.doneAt||"":""; t.photo=ot?ot.photo||"":""; t.doneBy=ot?ot.doneBy||"":""; });
+    s.tasks.forEach(t=>{ const ot=tasks[t.id]; t.doneAt=ot?ot.doneAt||"":""; t.photo=ot?ot.photo||"":""; t.photos=ot&&ot.photos?ot.photos:(t.photo?[t.photo]:[]); t.doneBy=ot?ot.doneBy||"":""; });
   }));
   snapshot();
   paintStatus();
@@ -343,9 +343,14 @@ const crewLink = c => `${BOOT.url}?crew=${c.token}`;
 /* ---------- Status painting (done checks, progress, crew notes) ---------- */
 const shortDay = iso => iso ? new Date(iso+"T12:00").toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"}) : "";
 function carryBadge(t){ return t.carried && t.carried.days>1 ? `<span class="carry" title="Carried over. First assigned ${esc(shortDay(t.carried.first))}">Day ${t.carried.days}</span>` : ""; }
+function photoLinks(t){
+  const ps=t.photos&&t.photos.length?t.photos:(t.photo?[t.photo]:[]);
+  if(ps.length<2) return ps.length?`<a href="${esc(ps[0])}" target="_blank" rel="noopener">See photo</a>`:"";
+  return `<span>Photos: ${ps.map((u,i)=>`<a href="${esc(u)}" target="_blank" rel="noopener">${i+1}</a>`).join(" ")}</span>`;
+}
 function statusHtml(t){
   if(!t.doneAt) return carryBadge(t) + (t.photoReq ? `<span class="hint">Needs photo</span>` : "");
-  return `<span class="done">Done ${esc(clockOf(t.doneAt))}</span>${t.doneBy?`<span class="by">by ${esc(t.doneBy)}</span>`:""}${t.photo?`<a href="${esc(t.photo)}" target="_blank" rel="noopener">See photo</a>`:""}`;
+  return `<span class="done">Done ${esc(clockOf(t.doneAt))}</span>${t.doneBy?`<span class="by">by ${esc(t.doneBy)}</span>`:""}${photoLinks(t)}`;
 }
 function progressText(c){
   const all=c.stops.flatMap(s=>s.tasks.filter(t=>t.text.trim())); if(!all.length) return "";
@@ -571,7 +576,7 @@ cards.addEventListener("click", e=>{
   const btn=e.target.closest("button[data-act]"); if(!btn) return;
   const {c,s,t}=ctx(btn); if(!c) return; const a=btn.dataset.act;
   if(a==="copylink"){ copyLink(c,btn); return; }
-  if(a==="dup"){ const copy=clone(c); copy.id=uid(); copy.token=token(); copy.lead=""; copy.members=""; copy.stops.forEach(x=>{const map={}; x.id=uid();x.crewNote="";x.crewNoteAt="";x.tasks.forEach(y=>{const n=uid(); map[y.id]=n; y.id=n;y.who=ALL;y.doneAt="";y.photo="";y.doneBy="";delete y.carried;}); (x.plans||[]).forEach(p=>(p.marks||[]).forEach(m=>{ m.task=map[m.task]||""; }));}); state.crews.splice(state.crews.indexOf(c)+1,0,copy); save(); renderCards(); return; }
+  if(a==="dup"){ const copy=clone(c); copy.id=uid(); copy.token=token(); copy.lead=""; copy.members=""; copy.stops.forEach(x=>{const map={}; x.id=uid();x.crewNote="";x.crewNoteAt="";x.tasks.forEach(y=>{const n=uid(); map[y.id]=n; y.id=n;y.who=ALL;y.doneAt="";y.photo="";y.photos=[];y.doneBy="";delete y.carried;}); (x.plans||[]).forEach(p=>(p.marks||[]).forEach(m=>{ m.task=map[m.task]||""; }));}); state.crews.splice(state.crews.indexOf(c)+1,0,copy); save(); renderCards(); return; }
   if(a==="del"){ if(!arm(btn,"Remove crew")) return; state.crews=state.crews.filter(x=>x!==c); save(); renderCards(); return; }
   if(a==="addstop"){ c.stops.push(blankStop()); save(); rerenderCard(c); return; }
   if(!s) return;
