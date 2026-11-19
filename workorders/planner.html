@@ -134,6 +134,14 @@ td.goal{width:16%;text-align:right!important;color:#333}
 .top-right{display:grid;gap:4px;justify-items:end}
 #loading{position:fixed;inset:0;display:grid;place-items:center;background:var(--bg);z-index:20;font-size:1rem;color:var(--muted)}
 #loading.err{color:var(--warn);padding:24px;text-align:center}
+/* ---------- Stuck tasks (on the list 3+ days) ---------- */
+.stuck-bar{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;justify-content:space-between;background:var(--panel);border:1px solid var(--warn);border-left:6px solid var(--warn);border-radius:8px;padding:10px 14px;color:var(--warn);font-weight:600}
+.stuck-list{display:grid;gap:14px}
+.stuck-job h3{margin:0 0 6px;font-family:var(--display);font-stretch:85%;font-size:1rem;text-transform:uppercase}
+.stuck-item{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 12px;align-items:center;padding:8px 0;border-top:1px solid var(--line)}
+.stuck-item .sub{font-size:.85rem;color:var(--muted)}
+.stuck-item .days{color:var(--warn);font-weight:600}
+.task-row.flash{outline:3px solid var(--warn);outline-offset:3px;border-radius:6px}
 /* ---------- Plans (blueprint pages with highlighted openings) ---------- */
 .plan-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
 .plan-chip{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:6px 8px;font-size:.85rem}
@@ -188,6 +196,7 @@ td.goal{width:16%;text-align:right!important;color:#333}
   <section id="plan" style="display:grid;gap:16px">
     <div class="tip tip-x" id="planTip"><span>One card per crew. Add a stop for each jobsite they hit today, in driving order. Give every task a person and a goal like "by lunch" or "6 openings." Anything not finished rolls to the top of that crew's next planned day on its own, with a red day count. Click its X if it's no longer needed. Each crew lead has one permanent link: click "Copy crew link" and send it to him once, by text, email or Phone Link. It always opens that day's plan. Add a plan PDF to a stop to highlight the openings for the crew. Checkmarks show up here as the crew taps tasks done. Everything saves to the CGC Work Orders Google Sheet.</span><button class="x" id="hideTip" aria-label="Hide tips" title="Hide tips">✕</button></div>
     <div class="tip-show" id="showTipRow" hidden><button class="linkish" id="showTip">Show tips</button></div>
+    <div class="stuck-bar" id="stuckBar" hidden></div>
     <div id="cards" style="display:grid;gap:16px"></div>
     <div class="bar">
       <button class="primary" id="addSheet">+ Add crew</button>
@@ -320,6 +329,7 @@ function applyCrewUpdates(serverCrews){
   }));
   snapshot();
   paintStatus();
+  paintStuck(false);
 }
 
 const esc = s => String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
@@ -342,6 +352,45 @@ function progressText(c){
   return `${all.filter(t=>t.doneAt).length} of ${all.length} done`;
 }
 function noteHtml(s){ return s.crewNote ? `<div class="crew-note"><b>Note from crew${s.crewNoteAt?", "+esc(clockOf(s.crewNoteAt)):""}</b><br>${esc(s.crewNote)}</div>` : ""; }
+/* ---------- Stuck tasks: unfinished and on the list STUCK_DAYS or more planned days ----------
+   A red bar sits above the crews on today's plan. The popup opens when the planner loads,
+   and again only when a new task becomes stuck (remembered on this computer). */
+const STUCK_DAYS = 3;
+function stuckTasks(){
+  if(!state.today || state.date!==state.today) return [];
+  const out=[];
+  state.crews.forEach(c=>c.stops.forEach(s=>s.tasks.forEach(t=>{
+    if(t.text.trim() && !t.doneAt && t.carried && t.carried.days>=STUCK_DAYS) out.push({c,s,t});
+  })));
+  return out.sort((a,b)=>b.t.carried.days-a.t.carried.days);
+}
+function paintStuck(popup){
+  const bar=document.getElementById("stuckBar"); if(!bar) return;
+  const list=stuckTasks();
+  bar.hidden=!list.length;
+  if(!list.length) return;
+  const jobs=new Set(list.map(x=>x.s.job.trim()||"a stop"));
+  bar.innerHTML=`<span>${list.length} unfinished task${list.length===1?"":"s"} on the list ${STUCK_DAYS}+ days (${esc([...jobs].join(", "))})</span><button class="small" id="stuckShow">See them</button>`;
+  document.getElementById("stuckShow").onclick=showStuck;
+  if(!popup || document.getElementById("modalBg")) return;
+  const sig=state.today+":"+list.map(x=>x.t.carried.src).sort().join(",");
+  let seen=""; try{ seen=localStorage.getItem("cgc-stuck-seen")||""; }catch(e){}
+  if(seen!==sig){ try{ localStorage.setItem("cgc-stuck-seen", sig); }catch(e){} showStuck(); }
+}
+function showStuck(){
+  const list=stuckTasks(); if(!list.length) return;
+  const groups={};
+  list.forEach(x=>{ const k=(x.s.job.trim()||"Unnamed stop")+"|"+x.c.id; (groups[k]=groups[k]||{job:x.s.job.trim()||"Unnamed stop",lead:x.c.lead,items:[]}).items.push(x); });
+  const bg=openModal(`<div class="modal-h"><h2>Stuck ${STUCK_DAYS}+ days</h2><button class="x" data-close aria-label="Close">✕</button></div>
+    <div class="modal-b"><p class="hint" style="margin:0 0 14px;font-size:.9rem">These have rolled over day after day without being marked done. Check with the crew, change the plan, or click the task's X on the plan if it's no longer needed.</p>
+    <div class="stuck-list">${Object.values(groups).map(g=>`<div class="stuck-job"><h3>${esc(g.job)}${g.lead?` · ${esc(g.lead)}'s crew`:""}</h3>
+      ${g.items.map(x=>`<div class="stuck-item"><div><div>${esc(x.t.text)}</div><div class="sub"><span class="days">Day ${x.t.carried.days}</span> · first assigned ${esc(shortDay(x.t.carried.first))} · ${esc(x.t.who)}${x.t.goal?" · goal: "+esc(x.t.goal):""}</div></div><button class="small" data-goto="${x.t.id}">Show on plan</button></div>`).join("")}</div>`).join("")}</div>
+    <div style="margin-top:16px"><button class="primary" data-close>Got it</button></div></div>`, "small-m stuck-m");
+  bg.querySelector(".modal").style.width="min(620px,100%)";
+  bg.addEventListener("click", e=>{ const b=e.target.closest("[data-goto]"); if(!b) return; closeModal(); show("plan");
+    const row=document.querySelector(`.task-row[data-task="${b.dataset.goto}"]`); if(!row) return;
+    row.scrollIntoView({block:"center",behavior:"smooth"}); row.classList.add("flash"); setTimeout(()=>row.classList.remove("flash"),2500); });
+}
 function paintStatus(){
   state.crews.forEach(c=>{
     const pg=document.getElementById("pg-"+c.id); if(pg){ const t=progressText(c); pg.textContent=t; pg.hidden=!t; }
@@ -433,10 +482,10 @@ function renderCard(c,i){
   </article>`;
 }
 
-function renderCards(){ document.getElementById("cards").innerHTML = state.crews.map(renderCard).join(""); }
+function renderCards(){ document.getElementById("cards").innerHTML = state.crews.map(renderCard).join(""); paintStuck(false); }
 function rerenderCard(c){
   const el=document.querySelector(`.card[data-id="${c.id}"]`); if(!el) return renderCards();
-  const tmp=document.createElement("div"); tmp.innerHTML=renderCard(c,state.crews.indexOf(c)); el.replaceWith(tmp.firstElementChild);
+  const tmp=document.createElement("div"); tmp.innerHTML=renderCard(c,state.crews.indexOf(c)); el.replaceWith(tmp.firstElementChild); paintStuck(false);
 }
 function ctx(el){
   const card=el.closest(".card[data-id]"); const c=card&&state.crews.find(x=>x.id===card.dataset.id);
@@ -704,7 +753,7 @@ async function loadDate(iso){
   lastSentDay="";
   await refreshPrev(iso);
   if(iso===state.date && carryInto(iso, state.crews)) save();
-  renderCards(); renderSheets();
+  renderCards(); renderSheets(); paintStuck(iso===state.today);
   refreshStatus();
 }
 pd.onchange=()=>loadDate(pd.value);
@@ -985,6 +1034,7 @@ applyTip();
     if(carryInto(d.today, state.crews)) save();
     renderPeople(); renderCards(); renderSheets();
     loading.hidden=true;
+    paintStuck(true);
   }catch(e){
     loading.classList.add("err");
     loading.textContent="Couldn't load the work orders. " + (e&&e.message?e.message:"Check your internet and reload the page.");
