@@ -329,7 +329,7 @@ function applyCrewUpdates(serverCrews){
   serverCrews.forEach(c=>(c.stops||[]).forEach(s=>{ stops[s.id]=s; (s.tasks||[]).forEach(t=>tasks[t.id]=t); }));
   state.crews.forEach(c=>c.stops.forEach(s=>{
     const os=stops[s.id]; s.crewNote=os?os.crewNote||"":""; s.crewNoteAt=os?os.crewNoteAt||"":"";
-    s.tasks.forEach(t=>{ const ot=tasks[t.id]; t.doneAt=ot?ot.doneAt||"":""; t.photo=ot?ot.photo||"":""; t.photos=ot&&ot.photos?ot.photos:(t.photo?[t.photo]:[]); t.doneBy=ot?ot.doneBy||"":""; });
+    s.tasks.forEach(t=>{ const ot=tasks[t.id]; t.assigned=ot?ot.assigned||"":""; t.assignedAt=ot?ot.assignedAt||"":""; t.doneAt=ot?ot.doneAt||"":""; t.photo=ot?ot.photo||"":""; t.photos=ot&&ot.photos?ot.photos:(t.photo?[t.photo]:[]); t.doneBy=ot?ot.doneBy||"":""; });
   }));
   snapshot();
   paintStatus();
@@ -347,13 +347,18 @@ const crewLink = c => `${BOOT.url}?crew=${c.token}`;
 /* ---------- Status painting (done checks, progress, crew notes) ---------- */
 const shortDay = iso => iso ? new Date(iso+"T12:00").toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"}) : "";
 function carryBadge(t){ return t.carried && t.carried.days>1 ? `<span class="carry" title="Carried over. First assigned ${esc(shortDay(t.carried.first))}">Day ${t.carried.days}</span>` : ""; }
+/* Who a task is assigned to: David's pick (t.who, changed at t.whoAt) or the crew lead's pick from the phone
+   (t.assigned, at t.assignedAt). Whichever was changed last wins. */
+const whoOf = t => t.assigned && String(t.assignedAt||"") > String(t.whoAt||"") ? t.assigned : (t.who||"");
+const leadSet = t => !!(t.assigned && String(t.assignedAt||"") > String(t.whoAt||""));
 function photoLinks(t){
   const ps=t.photos&&t.photos.length?t.photos:(t.photo?[t.photo]:[]);
   if(ps.length<2) return ps.length?`<a href="${esc(ps[0])}" target="_blank" rel="noopener">See photo</a>`:"";
   return `<span>Photos: ${ps.map((u,i)=>`<a href="${esc(u)}" target="_blank" rel="noopener">${i+1}</a>`).join(" ")}</span>`;
 }
 function statusHtml(t){
-  if(!t.doneAt) return carryBadge(t) + (t.photoReq ? `<span class="hint">Needs photo</span>` : "");
+  const lead = leadSet(t) ? `<span class="by" title="The crew lead assigned this from the jobsite at ${esc(clockOf(t.assignedAt))}. Pick a name here to change it back.">Lead set: ${esc(t.assigned)}</span>` : "";
+  if(!t.doneAt) return carryBadge(t) + (t.photoReq ? `<span class="hint">Needs photo</span>` : "") + lead;
   return `<span class="done">Done ${esc(clockOf(t.doneAt))}</span>${t.doneBy?`<span class="by">by ${esc(t.doneBy)}</span>`:""}${photoLinks(t)}`;
 }
 function progressText(c){
@@ -402,7 +407,7 @@ function showStuck(){
   const item = x => {
     const here = x.d===state.date;
     const where = x.d===state.today ? "on today's plan" : `last on the plan ${shortDay(x.d)}${x.d<state.today?", not carried to a later day":""}`;
-    return `<div class="stuck-item"><div><div>${esc(x.t.text)}</div><div class="sub"><span class="days">${x.age} workdays old</span>${x.n>1?` · Day ${x.n} on the plan`:""} · first assigned ${esc(shortDay(x.first))} · ${esc(x.t.who)}${x.t.goal?" · goal: "+esc(x.t.goal):""} · ${esc(where)}</div></div>
+    return `<div class="stuck-item"><div><div>${esc(x.t.text)}</div><div class="sub"><span class="days">${x.age} workdays old</span>${x.n>1?` · Day ${x.n} on the plan`:""} · first assigned ${esc(shortDay(x.first))} · ${esc(whoOf(x.t))}${x.t.goal?" · goal: "+esc(x.t.goal):""} · ${esc(where)}</div></div>
       <div class="bar">${here?`<button class="small" data-goto="${x.t.id}">Show on plan</button>`:`<button class="small" data-open="${x.d}" data-task="${x.t.id}">Open ${esc(shortDay(x.d))}</button>`}<button class="small danger" data-drop="${x.t.id}" data-day="${x.d}">Drop it</button></div></div>`;
   };
   const bg=openModal(`<div class="modal-h"><h2>Unfinished ${STUCK_DAYS}+ days</h2><button class="x" data-close aria-label="Close">✕</button></div>
@@ -447,7 +452,7 @@ function whoSummary(c){
   const names=crewNames(c);
   const counts=Object.fromEntries(names.map(n=>[n,0]));
   let crewWide=0;
-  c.stops.forEach(s=>s.tasks.forEach(t=>{ if(!t.text.trim()) return; if(t.who===ALL) crewWide++; else if(t.who in counts) counts[t.who]++; }));
+  c.stops.forEach(s=>s.tasks.forEach(t=>{ if(!t.text.trim()) return; const w=whoOf(t); if(w===ALL) crewWide++; else w.split(",").map(x=>x.trim()).forEach(n=>{ if(n in counts) counts[n]++; }); }));
   if(!names.length) return "";
   return `<div class="who-sum">${names.map(n=>`<span class="chip ${counts[n]||crewWide?"":"off"}">${esc(n)}: ${counts[n]} task${counts[n]===1?"":"s"}${crewWide?` + ${crewWide} crew`:""}</span>`).join("")}</div>`;
 }
@@ -549,7 +554,7 @@ cards.addEventListener("input", e=>{
   const {c,s,t}=ctx(e.target); if(!c) return; const d=e.target.dataset;
   if(d.f){ c[d.f]=e.target.value; if(d.f==="lead") e.target.closest(".card").querySelector("h2").textContent=`Crew ${state.crews.indexOf(c)+1}${c.lead?": "+c.lead:""}`; }
   if(d.sf&&s){ s[d.sf]=e.target.value; if(d.sf==="job") { const n=c.stops.indexOf(s)+1; e.target.closest(".stop").querySelector("h3").innerHTML=`<span class="stop-num">${n}</span>Stop ${n}${s.job?": "+esc(s.job):""}`; } }
-  if(d.tf&&t){ t[d.tf]=e.target.value; }
+  if(d.tf&&t){ t[d.tf]=e.target.value; if(d.tf==="who"){ t.whoAt=new Date().toISOString(); const st=document.getElementById("st-"+t.id); if(st) st.innerHTML=statusHtml(t); } }
   if(d.tp&&t){ t.photoReq=e.target.checked; const el=document.getElementById("st-"+t.id); if(el) el.innerHTML=statusHtml(t); }
   save();
   if(d.tf) e.target.closest(".card").querySelector(".whosum-slot").innerHTML=whoSummary(c);
@@ -590,7 +595,7 @@ cards.addEventListener("click", e=>{
   const btn=e.target.closest("button[data-act]"); if(!btn) return;
   const {c,s,t}=ctx(btn); if(!c) return; const a=btn.dataset.act;
   if(a==="copylink"){ copyLink(c,btn); return; }
-  if(a==="dup"){ const copy=clone(c); copy.id=uid(); copy.token=token(); copy.lead=""; copy.members=""; copy.stops.forEach(x=>{const map={}; x.id=uid();x.crewNote="";x.crewNoteAt="";x.tasks.forEach(y=>{const n=uid(); map[y.id]=n; y.id=n;y.who=ALL;y.doneAt="";y.photo="";y.photos=[];y.doneBy="";delete y.carried;}); (x.plans||[]).forEach(p=>(p.marks||[]).forEach(m=>{ m.task=map[m.task]||""; }));}); state.crews.splice(state.crews.indexOf(c)+1,0,copy); save(); renderCards(); return; }
+  if(a==="dup"){ const copy=clone(c); copy.id=uid(); copy.token=token(); copy.lead=""; copy.members=""; copy.stops.forEach(x=>{const map={}; x.id=uid();x.crewNote="";x.crewNoteAt="";x.tasks.forEach(y=>{const n=uid(); map[y.id]=n; y.id=n;y.who=ALL;delete y.assigned;delete y.assignedAt;y.doneAt="";y.photo="";y.photos=[];y.doneBy="";delete y.carried;}); (x.plans||[]).forEach(p=>(p.marks||[]).forEach(m=>{ m.task=map[m.task]||""; }));}); state.crews.splice(state.crews.indexOf(c)+1,0,copy); save(); renderCards(); return; }
   if(a==="del"){ if(!arm(btn,"Remove crew")) return; state.crews=state.crews.filter(x=>x!==c); save(); renderCards(); return; }
   if(a==="addstop"){ c.stops.push(blankStop()); save(); rerenderCard(c); return; }
   if(!s) return;
@@ -633,7 +638,7 @@ function renderSheets(){
       return `<div class="sh-stop">
         <div class="sh-h"><span>Stop ${k+1} of ${c.stops.length}${s.job?": "+esc(s.job):""}</span><span>${s.arrive?"Arrive "+esc(fmtTime(s.arrive)):""}</span></div>
         ${s.address||contact?`<div class="sh-meta">${s.address?`<span>${esc(s.address)}</span>`:""}${contact?`<span>Contact: ${contact}</span>`:""}</div>`:""}
-        ${tasks.length?`<table class="tasks"><tbody>${tasks.map(t=>`<tr><td class="c"><span class="box"></span></td><td class="who-cell">${esc(t.who)}</td><td>${esc(t.text)}${openingsOf(s,t).length?`<br><span style="font-size:9pt;color:#333">Openings: ${esc(openingsOf(s,t).join(", "))}</span>`:""}</td><td class="goal">${esc(t.goal||"")}${t.carried&&t.carried.days>1?`<br><span style="font-size:8.5pt">Carried, day ${t.carried.days}</span>`:""}</td></tr>`).join("")}</tbody></table>`:""}
+        ${tasks.length?`<table class="tasks"><tbody>${tasks.map(t=>`<tr><td class="c"><span class="box"></span></td><td class="who-cell">${esc(whoOf(t))}</td><td>${esc(t.text)}${openingsOf(s,t).length?`<br><span style="font-size:9pt;color:#333">Openings: ${esc(openingsOf(s,t).join(", "))}</span>`:""}</td><td class="goal">${esc(t.goal||"")}${t.carried&&t.carried.days>1?`<br><span style="font-size:8.5pt">Carried, day ${t.carried.days}</span>`:""}</td></tr>`).join("")}</tbody></table>`:""}
         ${s.materials||s.notes?`<div class="sh-extra">
           ${s.materials?`<div><span class="sh-k">Load</span><span class="sh-text">${esc(s.materials)}</span></div>`:""}
           ${s.notes?`<div><span class="sh-k">Notes</span><span class="sh-text">${esc(s.notes)}</span></div>`:""}
@@ -780,7 +785,7 @@ function carryInto(iso, crews){
         target={id:uid(),arrive:"",job:ss.job||"",address:ss.address||"",gc:ss.gc||"",gcPhone:ss.gcPhone||"",bidHours:ss.bidHours||"",materials:"",notes:"",tasks:[],plans:[],carriedStop:true};
         newStops.push(target);
       }
-      const copies=left.map(t=>({id:uid(),text:t.text,who:t.who,goal:t.goal||"",photoReq:!!t.photoReq,
+      const copies=left.map(t=>({id:uid(),text:t.text,who:whoOf(t),goal:t.goal||"",photoReq:!!t.photoReq,
         carried:{src:t.id, first:(t.carried&&t.carried.first)||p, days:((t.carried&&t.carried.days)||1)+1}}));
       const idMap={}; left.forEach((t,i)=>idMap[t.id]=copies[i].id);
       mergePlans(target, ss.plans, idMap);
@@ -846,7 +851,7 @@ function renderHistory(){
   const done=rows.filter(r=>r.t.doneAt).length;
   out.innerHTML = `<p class="hint" style="font-size:.9rem">Scheduled on ${days} day${days===1?"":"s"}. ${done} of ${rows.length} tasks marked done${bid?`. Bid ${esc(bid)} man-hours`:""}. Compare to the hours in QB Workforce for this job.</p>
   <table class="hist"><thead><tr><th>Date</th><th>Crew</th><th>Who</th><th>Task</th><th>Goal</th><th>Done</th></tr></thead><tbody>
-  ${rows.map(r=>`<tr><td class="d">${esc(new Date(r.date+"T12:00").toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"}))}</td><td>${esc(r.lead)}</td><td>${esc(r.t.who)}</td><td>${esc(r.t.text)}</td><td>${esc(r.t.goal||"")}</td><td class="d">${r.t.doneAt?esc(clockOf(r.t.doneAt))+(r.t.doneBy?" by "+esc(r.t.doneBy):""):r.t.dropped?"Dropped":"Not done"}${r.t.carried&&r.t.carried.days>1?" (day "+r.t.carried.days+")":""}</td></tr>`).join("")}
+  ${rows.map(r=>`<tr><td class="d">${esc(new Date(r.date+"T12:00").toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"}))}</td><td>${esc(r.lead)}</td><td>${esc(whoOf(r.t))}</td><td>${esc(r.t.text)}</td><td>${esc(r.t.goal||"")}</td><td class="d">${r.t.doneAt?esc(clockOf(r.t.doneAt))+(r.t.doneBy?" by "+esc(r.t.doneBy):""):r.t.dropped?"Dropped":"Not done"}${r.t.carried&&r.t.carried.days>1?" (day "+r.t.carried.days+")":""}</td></tr>`).join("")}
   </tbody></table>`;
 }
 document.getElementById("histJob").onchange=renderHistory;
@@ -1061,7 +1066,7 @@ function pmPaint(){
   document.getElementById("pmList").innerHTML = pm.plan.marks.length ? pm.plan.marks.map(m=>`<div class="mk-row ${m.id===pm.sel?"sel":""}" data-row="${m.id}">
       <input id="ml-${m.id}" data-ml="${m.id}" value="${esc(m.label)}" aria-label="Opening name" maxlength="40">
       <button class="x" data-md="${m.id}" aria-label="Delete this box">✕</button>
-      <select data-mt="${m.id}" aria-label="Task for this opening"><option value="">Not linked to a task</option>${tasks.map(t=>`<option value="${t.id}" ${t.id===m.task?"selected":""}>${esc(t.text)}${t.who&&t.who!==ALL?" ("+esc(t.who)+")":""}</option>`).join("")}${m.task&&!tasks.some(t=>t.id===m.task)?`<option value="${m.task}" selected>A removed task</option>`:""}</select>
+      <select data-mt="${m.id}" aria-label="Task for this opening"><option value="">Not linked to a task</option>${tasks.map(t=>`<option value="${t.id}" ${t.id===m.task?"selected":""}>${esc(t.text)}${whoOf(t)&&whoOf(t)!==ALL?" ("+esc(whoOf(t))+")":""}</option>`).join("")}${m.task&&!tasks.some(t=>t.id===m.task)?`<option value="${m.task}" selected>A removed task</option>`:""}</select>
     </div>`).join("") : `<p class="hint" style="margin:0">No openings marked yet.</p>`;
 }
 

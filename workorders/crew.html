@@ -72,6 +72,13 @@ button.btn.ghost{background:var(--panel);color:var(--fg);border-color:var(--line
 .who-task{margin:0;color:var(--muted);font-size:.95rem}
 .who-names{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px}
 .who-names .btn{padding:14px 12px;font-size:1.05rem}
+.who-names .btn[aria-pressed="true"]::before{content:"✓ "}
+.who-names .btn.all{grid-column:1/-1}
+.who-hint{margin:-6px 0 0;font-size:.9rem;color:var(--muted)}
+.who-more{font:inherit;font-weight:600;font-size:.95rem;background:none;border:none;color:var(--s0);text-decoration:underline;padding:4px 0;justify-self:start}
+.who-sheet{max-height:92vh;overflow:auto}
+.t-sub .assign{color:var(--s0);font-weight:600;text-decoration:underline;padding:2px 0}
+.t-sub .ok{flex-basis:100%;font-size:.98rem}
 .ph-thumbs{display:grid;grid-template-columns:repeat(auto-fill,minmax(88px,1fr));gap:8px}
 .ph-thumbs:empty{display:none}
 .ph-th{position:relative;aspect-ratio:1;border-radius:8px;overflow:hidden;background:var(--bg);border:1px solid var(--line)}
@@ -164,7 +171,11 @@ button.btn.ghost{background:var(--panel);color:var(--fg);border-color:var(--line
   <div class="who-sheet" role="dialog" aria-modal="true" aria-labelledby="whoTitle">
     <h3 id="whoTitle">Who finished it?</h3>
     <p class="who-task" id="whoTask"></p>
+    <p class="who-hint" id="whoHint">Tap everyone who worked on it.</p>
     <div class="who-names" id="whoNames"></div>
+    <button class="who-more" id="whoMore" hidden>Someone not on this crew</button>
+    <div class="who-names" id="whoOthers" hidden></div>
+    <button class="btn" id="whoOk">Mark done</button>
     <button class="btn ghost" id="whoCancel">Cancel</button>
   </div>
 </div>
@@ -261,16 +272,17 @@ function render(){
     </section>`;}).join("") : `<div class="center">Nothing is planned for your crew yet. Check with David.</div>`;
 }
 function taskHtml(t,s,ro){
-  const sub=[`<span class="who">${esc(t.who)}</span>`];
+  const sub=[`<span class="who">${esc(whoOf(t))}</span>`];
+  if(!ro && !t.doneAt) sub.push(`<span class="assign" data-assign="${t.id}" role="button" tabindex="0">Assign</span>`);
   if(t.goal) sub.push(`<span class="goal">Goal: ${esc(t.goal)}</span>`);
   const ops=openingsOf(s,t); if(ops.length) sub.push(`<span class="op">Openings: ${esc(ops.join(", "))}</span>`);
   if(t.carried && t.carried.days>1 && !t.doneAt) sub.push(`<span class="carried">Day ${t.carried.days}, carried over</span>`);
   const np=(t.photos&&t.photos.length)||(t.photo?1:0);
-  if(t.doneAt) sub.push(`<span class="ok">Done ${esc(clockOf(t.doneAt))}${t.doneBy?" by "+esc(t.doneBy):""}${np?` with ${np===1?"photo":np+" photos"}`:""}</span>`);
+  if(t.doneAt) sub.push(`<span class="ok">✓ Done ${esc(clockOf(t.doneAt))}${t.doneBy?" by "+esc(t.doneBy):""}${np?` with ${np===1?"photo":np+" photos"}`:""}</span>`);
   if(t.doneAt && t.photoReq) sub.push(`<span class="addph" data-addph="${t.id}" role="button" tabindex="0">Add more photos</span>`);
   else if(t.photoReq) sub.push(`<span class="ph">Photo needed to finish</span>`);
   if(armed[t.id]) sub.push(`<span class="undo">Tap again to undo</span>`);
-  if(ro) return `<div class="task ro"><span><span class="t-text">${esc(t.text)}</span><span class="t-sub">${sub.filter(x=>!/addph|class="ph"|class="ok"/.test(x)).join("")}</span></span></div>`;
+  if(ro) return `<div class="task ro"><span><span class="t-text">${esc(t.text)}</span><span class="t-sub">${sub.filter(x=>!/addph|assign|class="ph"|class="ok"/.test(x)).join("")}</span></span></div>`;
   return `<button class="task ${t.doneAt?"done":""}" data-task="${t.id}" aria-pressed="${t.doneAt?"true":"false"}">
     <span class="check" aria-hidden="true"></span>
     <span><span class="t-text">${esc(t.text)}</span><span class="t-sub">${sub.join("")}</span></span>
@@ -282,6 +294,8 @@ function findTask(id){ for(const s of crew.stops) for(const t of s.tasks) if(t.i
 document.getElementById("stops").addEventListener("click", async e=>{
   const pb=e.target.closest("button[data-plan]");
   if(pb){ openPlan(pb.dataset.stop, pb.dataset.plan, pb.dataset.day==="next"); return; }
+  const as=e.target.closest("[data-assign]");
+  if(as){ const t=findTask(as.dataset.assign); if(t) openPicker(t,"assign"); return; }
   const ap=e.target.closest("[data-addph]");
   if(ap){ const t=findTask(ap.dataset.addph); if(t) openPhotos(t,t.doneBy||"",false); return; }
   const nb=e.target.closest("button[data-note]");
@@ -296,28 +310,58 @@ document.getElementById("stops").addEventListener("click", async e=>{
   askWho(t);
 });
 
-/* ---------- Who finished it? ---------- */
-const whoBg=document.getElementById("whoBg");
-function crewNamesOf(){ return [crew.lead, ...String(crew.members||"").split(",").map(x=>x.trim())].filter(Boolean); }
-function askWho(t){
-  const names=crewNamesOf();
-  if(!names.length){ finish(t,""); return; }
-  let last=""; try{ last=localStorage.getItem("cgc-last-name")||""; }catch(e){}
-  pickFor=t;
+/* ---------- Picking people: who finished it, or who's doing it ----------
+   Several people can be picked. The crew's names come first; "Someone not on this crew" opens the company roster. */
+const whoBg=document.getElementById("whoBg"), whoOk=document.getElementById("whoOk");
+const whoOf = t => t.assigned && String(t.assignedAt||"") > String(t.whoAt||"") ? t.assigned : (t.who||"");
+const splitNames = v => String(v||"").split(",").map(x=>x.trim()).filter(Boolean);
+let people=[], pick=null;
+function crewNamesOf(){ return [crew.lead, ...splitNames(crew.members)].filter(Boolean); }
+function openPicker(t, mode){
+  const names=crewNamesOf(), others=people.filter(p=>!names.some(n=>n.toLowerCase()===p.toLowerCase()));
+  if(mode==="done" && !names.length && !others.length){ finish(t,""); return; }
+  const cur=splitNames(whoOf(t)).filter(n=>n!=="Whole crew");
+  let sel=cur;
+  if(mode==="done" && !sel.length){ try{ sel=splitNames(localStorage.getItem("cgc-last-name")).filter(n=>names.includes(n)||others.includes(n)); }catch(e){ sel=[]; } }
+  pick={t,mode,sel:new Set(sel),names,others};
+  document.getElementById("whoTitle").textContent = mode==="done" ? "Who finished it?" : "Who's doing this?";
+  document.getElementById("whoHint").textContent = mode==="done" ? "Tap everyone who worked on it." : "Tap each person, or Whole crew.";
   document.getElementById("whoTask").textContent=t.text;
-  document.getElementById("whoNames").innerHTML=names.map(n=>`<button class="btn ${n===last?"":"ghost"}" data-name="${esc(n)}">${esc(n)}</button>`).join("");
-  whoBg.hidden=false;
+  const extra=sel.filter(n=>!names.includes(n));
+  document.getElementById("whoOthers").hidden=!extra.length;
+  document.getElementById("whoMore").hidden=!others.length || !!extra.length;
+  paintPicker(); whoBg.hidden=false;
 }
-function closeWho(){ whoBg.hidden=true; pickFor=null; }
-document.getElementById("whoNames").addEventListener("click", e=>{
-  const b=e.target.closest("button[data-name]"); if(!b || !pickFor) return;
-  const t=pickFor, name=b.dataset.name; closeWho();
-  try{ localStorage.setItem("cgc-last-name", name); }catch(e){}
-  finish(t,name);
+function paintPicker(){
+  const p=pick; if(!p) return;
+  const btn = n => `<button class="btn ${p.sel.has(n)?"":"ghost"}" data-name="${esc(n)}" aria-pressed="${p.sel.has(n)}">${esc(n)}</button>`;
+  document.getElementById("whoNames").innerHTML = (p.mode==="assign" ? `<button class="btn all ${p.sel.size?"ghost":""}" data-all="1" aria-pressed="${!p.sel.size}">Whole crew</button>` : "") + p.names.map(btn).join("");
+  document.getElementById("whoOthers").innerHTML = p.others.map(btn).join("");
+  const n=p.sel.size;
+  whoOk.disabled = p.mode==="done" && !n;
+  whoOk.textContent = p.mode==="assign" ? (n ? `Save (${n} ${n===1?"person":"people"})` : "Save: whole crew") : (n ? `Mark done (${[...p.sel].join(", ")})` : "Pick who finished it");
+}
+function closeWho(){ whoBg.hidden=true; pick=null; }
+whoBg.addEventListener("click", e=>{
+  if(e.target===whoBg){ closeWho(); return; }
+  if(!pick) return;
+  const b=e.target.closest("button[data-name]"), all=e.target.closest("button[data-all]");
+  if(all){ pick.sel.clear(); paintPicker(); return; }
+  if(b){ const n=b.dataset.name; pick.sel.has(n)?pick.sel.delete(n):pick.sel.add(n); paintPicker(); }
 });
+document.getElementById("whoMore").onclick=()=>{ document.getElementById("whoOthers").hidden=false; document.getElementById("whoMore").hidden=true; };
+whoOk.onclick=async ()=>{
+  if(!pick) return;
+  const {t,mode}=pick, names=[...pick.sel]; closeWho();
+  if(mode==="done"){ try{ localStorage.setItem("cgc-last-name", names.join(", ")); }catch(e){} finish(t, names.join(", ")); return; }
+  const before=[t.assigned,t.assignedAt];
+  t.assigned=names.length?names.join(", "):"Whole crew"; t.assignedAt=new Date().toISOString(); render();
+  try{ crew = await call("apiAssign", BOOT.c, t.id, names); render(); }
+  catch(e){ [t.assigned,t.assignedAt]=before; render(); showErr(errText(e)); }
+};
 document.getElementById("whoCancel").onclick=closeWho;
-whoBg.addEventListener("click", e=>{ if(e.target===whoBg) closeWho(); });
 document.addEventListener("keydown", e=>{ if(e.key==="Escape" && !whoBg.hidden) closeWho(); });
+function askWho(t){ openPicker(t,"done"); }
 function finish(t,name){
   if(t.photoReq){ openPhotos(t,name,true); return; }
   mark(t,true,null,name);
@@ -489,7 +533,7 @@ pvView.addEventListener("pointerup", ptrEnd); pvView.addEventListener("pointerca
 async function load(){
   try{
     const d=await call("apiCrew", BOOT.c);
-    date=d.date; nxt=d.next||null;
+    date=d.date; nxt=d.next||null; people=Array.isArray(d.people)?d.people.filter(Boolean):[];
     crew=d.missing?null:d.crew;
     missingMsg = d.missing ? (d.standing
         ? "Nothing is planned for your crew on " + dayName(d.date) + "." + (nxt&&nxt.crew ? " Tap " + shortName(nxt.date) + " above to see what's next." : " Check back after David finishes the plan, then tap Refresh.")
